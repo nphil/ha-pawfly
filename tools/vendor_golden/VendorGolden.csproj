@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Generates tests/fixtures/vendor_golden.json: the frames the vendor app's own C# code builds
+       (copied verbatim from research/decompiled) and how its receive path reads sample replies.
+       Regenerate with "dotnet run" on this project and pass the output path as its only argument. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <UseAppHost>false</UseAppHost>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+</Project>

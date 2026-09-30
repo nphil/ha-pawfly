@@ -1,0 +1,71 @@
+{
+  "entity": {
+    "binary_sensor": {
+      "connected": {
+        "default": "mdi:bluetooth-off",
+        "state": {
+          "on": "mdi:bluetooth-connect",
+          "off": "mdi:bluetooth-off"
+        }
+      }
+    },
+    "button": {
+      "sync_time": {
+        "default": "mdi:clock-check-outline"
+      },
+      "release_link": {
+        "default": "mdi:bluetooth-off"
+      }
+    },
+    "select": {
+      "program": {
+        "default": "mdi:calendar-clock",
+        "state": {
+          "manual": "mdi:tune-variant",
+          "japanese_style": "mdi:leaf",
+          "dutch_style": "mdi:flower-tulip",
+          "jungle_style": "mdi:tree",
+          "diy_1": "mdi:calendar-edit",
+          "diy_2": "mdi:calendar-edit",
+          "diy_3": "mdi:calendar-edit"
+        }
+      }
+    },
+    "sensor": {
+      "mode": {
+        "default": "mdi:tune-variant",
+        "state": {
+          "manual": "mdi:tune-variant",
+          "scene": "mdi:palette",
+          "program": "mdi:calendar-clock"
+        }
+      }
+    }
+  },
+  "services": {
+    "get_program": {
+      "service": "mdi:chart-timeline-variant"
+    },
+    "set_program": {
+      "service": "mdi:calendar-edit"
+    },
+    "set_channel": {
+      "service": "mdi:tune"
+    },
+    "preview": {
+      "service": "mdi:eye-outline"
+    },
+    "sync_time": {
+      "service": "mdi:clock-check-outline"
+    },
+    "rename": {
+      "service": "mdi:rename-box"
+    },
+    "change_password": {
+      "service": "mdi:key-change"
+    },
+    "release_link": {
+      "service": "mdi:bluetooth-off"
+    }
+  }
+}

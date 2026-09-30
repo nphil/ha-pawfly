@@ -1,0 +1,177 @@
+get_program:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: pawfly
+    program:
+      required: true
+      example: diy_1
+      selector:
+        select:
+          options:
+            - japanese_style
+            - dutch_style
+            - jungle_style
+            - diy_1
+            - diy_2
+            - diy_3
+          translation_key: program
+
+set_program:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: pawfly
+    program:
+      required: true
+      example: diy_1
+      selector:
+        select:
+          options:
+            - diy_1
+            - diy_2
+            - diy_3
+          translation_key: program
+    points:
+      required: true
+      example: '[{"time": "07:00", "red": 0, "green": 0, "blue": 0, "white": 0}, {"time": "08:00", "red": 70, "green": 70, "blue": 70, "white": 70}]'
+      selector:
+        object:
+
+set_channel:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: pawfly
+    red:
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
+    green:
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
+    blue:
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
+    white:
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
+
+preview:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: pawfly
+    red:
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
+    green:
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
+    blue:
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
+    white:
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          mode: slider
+          unit_of_measurement: "%"
+    end:
+      default: false
+      selector:
+        boolean:
+
+sync_time:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: pawfly
+
+rename:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: pawfly
+    name:
+      required: true
+      example: Tank
+      selector:
+        text:
+
+change_password:
+  fields:
+    device_id:
+      required: true
+      selector:
+        device:
+          integration: pawfly
+    new_password:
+      required: true
+      selector:
+        text:
+          type: password
+
+release_link:
+  fields:
+    device_id:
+      selector:
+        device:
+          integration: pawfly
+    resume_after:
+      default: 180
+      selector:
+        number:
+          min: 0
+          max: 900
+          step: 1
+          mode: box
+          unit_of_measurement: s

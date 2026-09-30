@@ -1,0 +1,1083 @@
+{
+ "source": "real light PY4C-BT-PSTL (78:9C:E7:2D:FB:A3), 2026-09-30, BlueShark raw writes; hex copied from the live log in docs/PROTOCOL.md",
+ "tx": [
+  {
+   "fn": "query_status",
+   "args": [],
+   "hex": "bd0601ffffffffffbf",
+   "label": "ORIGINAL status"
+  },
+  {
+   "fn": "query_program",
+   "args": [
+    3
+   ],
+   "hex": "bd060280ffffffff41",
+   "label": "ORIGINAL query_program 3"
+  },
+  {
+   "fn": "query_program",
+   "args": [
+    4
+   ],
+   "hex": "bd060281ffffffff42",
+   "label": "ORIGINAL query_program 4"
+  },
+  {
+   "fn": "query_program",
+   "args": [
+    5
+   ],
+   "hex": "bd060282ffffffff43",
+   "label": "ORIGINAL query_program 5"
+  },
+  {
+   "fn": "power",
+   "args": [
+    false
+   ],
+   "hex": "ad060100ffffffffb0",
+   "label": "A1 power(False)"
+  },
+  {
+   "fn": "power",
+   "args": [
+    true
+   ],
+   "hex": "ad060101ffffffffb1",
+   "label": "A3 power(True)"
+  },
+  {
+   "fn": "brightness",
+   "args": [
+    60
+   ],
+   "hex": "ad06023cffffffffed",
+   "label": "B brightness(60)"
+  },
+  {
+   "fn": "brightness",
+   "args": [
+    100
+   ],
+   "hex": "ad060264ffffffff15",
+   "label": "B brightness(100)"
+  },
+  {
+   "fn": "brightness",
+   "args": [
+    1
+   ],
+   "hex": "ad060201ffffffffb2",
+   "label": "B brightness(1)"
+  },
+  {
+   "fn": "brightness",
+   "args": [
+    90
+   ],
+   "hex": "ad06025affffffff0b",
+   "label": "B brightness(90)"
+  },
+  {
+   "fn": "brightness",
+   "args": [
+    0
+   ],
+   "hex": "ad060200ffffffffb1",
+   "label": "B brightness(0) raw"
+  },
+  {
+   "fn": "color",
+   "args": [
+    0,
+    0,
+    100
+   ],
+   "hex": "ad0605000064ffff1a",
+   "label": "C color(0, 0, 100)"
+  },
+  {
+   "fn": "color",
+   "args": [
+    100,
+    0,
+    0
+   ],
+   "hex": "ad0605640000ffff1a",
+   "label": "C color(100, 0, 0)"
+  },
+  {
+   "fn": "color",
+   "args": [
+    37,
+    62,
+    81
+   ],
+   "hex": "ad0605253e51ffff6a",
+   "label": "C color(37, 62, 81)"
+  },
+  {
+   "fn": "color",
+   "args": [
+    0,
+    100,
+    0
+   ],
+   "hex": "ad0605006400ffff1a",
+   "label": "C color(0, 100, 0)"
+  },
+  {
+   "fn": "white",
+   "args": [
+    20
+   ],
+   "hex": "ad06041403ffffffcb",
+   "label": "C white(20)"
+  },
+  {
+   "fn": "white",
+   "args": [
+    55
+   ],
+   "hex": "ad06043703ffffffee",
+   "label": "C white(55)"
+  },
+  {
+   "fn": "white",
+   "args": [
+    0
+   ],
+   "hex": "ad06040003ffffffb7",
+   "label": "C white(0)"
+  },
+  {
+   "fn": "scenario",
+   "args": [
+    0
+   ],
+   "hex": "ad060700ffffffffb6",
+   "label": "D scenario(0) Cloudy"
+  },
+  {
+   "fn": "scenario",
+   "args": [
+    1
+   ],
+   "hex": "ad060701ffffffffb7",
+   "label": "D scenario(1) Thunderstorm"
+  },
+  {
+   "fn": "scenario",
+   "args": [
+    2
+   ],
+   "hex": "ad060702ffffffffb8",
+   "label": "D scenario(2) Sunny"
+  },
+  {
+   "fn": "scenario",
+   "args": [
+    3
+   ],
+   "hex": "ad060703ffffffffb9",
+   "label": "D scenario(3) Moonlight"
+  },
+  {
+   "fn": "scenario",
+   "args": [
+    4
+   ],
+   "hex": "ad060704ffffffffba",
+   "label": "D scenario(4) Warm White"
+  },
+  {
+   "fn": "scenario",
+   "args": [
+    5
+   ],
+   "hex": "ad060705ffffffffbb",
+   "label": "D scenario(5) Bright White"
+  },
+  {
+   "fn": "scenario",
+   "args": [
+    6
+   ],
+   "hex": "ad060706ffffffffbc",
+   "label": "D scenario(6) Day"
+  },
+  {
+   "fn": "scenario",
+   "args": [
+    7
+   ],
+   "hex": "ad060707ffffffffbd",
+   "label": "D scenario(7) RGB Cycle"
+  },
+  {
+   "fn": "time_sync",
+   "args": [
+    "2026-09-30T01:08:29"
+   ],
+   "hex": "ad060601081d03ffe1",
+   "label": "G1 time_sync(01:08:29 dow 3)"
+  },
+  {
+   "fn": "program",
+   "args": [
+    0
+   ],
+   "hex": "ad060800ffffffffb7",
+   "label": "G2 program(0) Japanese style"
+  },
+  {
+   "fn": "program",
+   "args": [
+    1
+   ],
+   "hex": "ad060801ffffffffb8",
+   "label": "G2 program(1) Dutch style"
+  },
+  {
+   "fn": "program",
+   "args": [
+    2
+   ],
+   "hex": "ad060802ffffffffb9",
+   "label": "G2 program(2) Jungle style"
+  },
+  {
+   "fn": "preview",
+   "args": [
+    [
+     0,
+     0,
+     100,
+     0
+    ]
+   ],
+   "hex": "ad060c010000640024",
+   "label": "J1 preview(0,0,100,0)"
+  },
+  {
+   "fn": "preview",
+   "args": [
+    null
+   ],
+   "hex": "ad060c0000000000bf",
+   "label": "J2 preview end"
+  },
+  {
+   "fn": "channel",
+   "args": [
+    0,
+    60
+   ],
+   "hex": "ad06043c00fffffff0",
+   "label": "K chan(60, chl=0)"
+  },
+  {
+   "fn": "channel",
+   "args": [
+    1,
+    60
+   ],
+   "hex": "ad06043c01fffffff1",
+   "label": "K chan(60, chl=1)"
+  },
+  {
+   "fn": "channel",
+   "args": [
+    2,
+    60
+   ],
+   "hex": "ad06043c02fffffff2",
+   "label": "K chan(60, chl=2)"
+  },
+  {
+   "fn": "channel",
+   "args": [
+    3,
+    60
+   ],
+   "hex": "ad06043c03fffffff3",
+   "label": "K white(60)"
+  }
+ ],
+ "status": [
+  {
+   "hex": "bd0a81015a000007006400000e",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 0,
+    "scenario": null,
+    "program": null,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "ORIGINAL status"
+  },
+  {
+   "hex": "bd0a81005a000007006400000d",
+   "expect": {
+    "power": false,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 0,
+    "scenario": null,
+    "program": null,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "A2 status after power off"
+  },
+  {
+   "hex": "bd0a81010000000700640000b4",
+   "expect": {
+    "power": true,
+    "brightness": 0,
+    "speed": 0,
+    "mode": 0,
+    "scenario": null,
+    "program": null,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "B status after brightness 0"
+  },
+  {
+   "hex": "bd0a81010100000700640000b5",
+   "expect": {
+    "power": true,
+    "brightness": 1,
+    "speed": 0,
+    "mode": 0,
+    "scenario": null,
+    "program": null,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "B status after brightness 1"
+  },
+  {
+   "hex": "bd0a81013c00000700640000f0",
+   "expect": {
+    "power": true,
+    "brightness": 60,
+    "speed": 0,
+    "mode": 0,
+    "scenario": null,
+    "program": null,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "B status after brightness 60"
+  },
+  {
+   "hex": "bd0a8101640000070064000018",
+   "expect": {
+    "power": true,
+    "brightness": 100,
+    "speed": 0,
+    "mode": 0,
+    "scenario": null,
+    "program": null,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "B status after brightness 100"
+  },
+  {
+   "hex": "bd0a81015a000007006400000e",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 0,
+    "scenario": null,
+    "program": null,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "B status after brightness 90"
+  },
+  {
+   "hex": "bd0a81015a000007000064000e",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 0,
+    "scenario": null,
+    "program": null,
+    "red": 0,
+    "green": 0,
+    "blue": 100,
+    "white": 0
+   },
+   "label": "C status after color (0, 0, 100)"
+  },
+  {
+   "hex": "bd0a81015a000007640000000e",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 0,
+    "scenario": null,
+    "program": null,
+    "red": 100,
+    "green": 0,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "C status after color (100, 0, 0)"
+  },
+  {
+   "hex": "bd0a81015a000007253e51005e",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 0,
+    "scenario": null,
+    "program": null,
+    "red": 37,
+    "green": 62,
+    "blue": 81,
+    "white": 0
+   },
+   "label": "C status after color (37, 62, 81)"
+  },
+  {
+   "hex": "bd0a81015a0000070064001422",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 0,
+    "scenario": null,
+    "program": null,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 20
+   },
+   "label": "C status after white 20"
+  },
+  {
+   "hex": "bd0a81015a0000070064003745",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 0,
+    "scenario": null,
+    "program": null,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 55
+   },
+   "label": "C status after white 55"
+  },
+  {
+   "hex": "bd0a81015a0001000064000008",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 1,
+    "scenario": 0,
+    "program": null,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "D status ~0.5s after scenario 0"
+  },
+  {
+   "hex": "bd0a81015a0001010064000009",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 1,
+    "scenario": 1,
+    "program": null,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "D status ~0.5s after scenario 1"
+  },
+  {
+   "hex": "bd0a81015a000102006400000a",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 1,
+    "scenario": 2,
+    "program": null,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "D status ~0.5s after scenario 2"
+  },
+  {
+   "hex": "bd0a81015a000103006400000b",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 1,
+    "scenario": 3,
+    "program": null,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "D status ~0.5s after scenario 3"
+  },
+  {
+   "hex": "bd0a81015a000104006400000c",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 1,
+    "scenario": 4,
+    "program": null,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "D status ~0.5s after scenario 4"
+  },
+  {
+   "hex": "bd0a81015a000105006400000d",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 1,
+    "scenario": 5,
+    "program": null,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "D status ~0.5s after scenario 5"
+  },
+  {
+   "hex": "bd0a81015a000106006400000e",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 1,
+    "scenario": 6,
+    "program": null,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "D status ~0.5s after scenario 6"
+  },
+  {
+   "hex": "bd0a81015a000107006400000f",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 1,
+    "scenario": 7,
+    "program": null,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "D status ~0.5s after scenario 7"
+  },
+  {
+   "hex": "bd0a81015a0002000064000009",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 2,
+    "scenario": null,
+    "program": 0,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "G2 status after program 0"
+  },
+  {
+   "hex": "bd0a81015a000201006400000a",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 2,
+    "scenario": null,
+    "program": 1,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "G2 status after program 1"
+  },
+  {
+   "hex": "bd0a81015a000202006400000b",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 2,
+    "scenario": null,
+    "program": 2,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "G2 status after program 2"
+  },
+  {
+   "hex": "bd0a81015a0000003c000000df",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 0,
+    "scenario": null,
+    "program": null,
+    "red": 60,
+    "green": 0,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "K status after chan chl=0"
+  },
+  {
+   "hex": "bd0a81015a000000003c0000df",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 0,
+    "scenario": null,
+    "program": null,
+    "red": 0,
+    "green": 60,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "K status after chan chl=1"
+  },
+  {
+   "hex": "bd0a81015a00000000003c00df",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 0,
+    "scenario": null,
+    "program": null,
+    "red": 0,
+    "green": 0,
+    "blue": 60,
+    "white": 0
+   },
+   "label": "K status after chan chl=2"
+  },
+  {
+   "hex": "bd0a81015a0000000000003cdf",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 0,
+    "scenario": null,
+    "program": null,
+    "red": 0,
+    "green": 0,
+    "blue": 0,
+    "white": 60
+   },
+   "label": "K status white 60"
+  },
+  {
+   "hex": "bd0a81015a000281006400008a",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 2,
+    "scenario": null,
+    "program": 4,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "N2 status running [app default 00 7F FF]"
+  },
+  {
+   "hex": "bd0a81015a000282006400008b",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 2,
+    "scenario": null,
+    "program": 5,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "O1 status"
+  },
+  {
+   "hex": "bd0a81015a0002800064000089",
+   "expect": {
+    "power": true,
+    "brightness": 90,
+    "speed": 0,
+    "mode": 2,
+    "scenario": null,
+    "program": 3,
+    "red": 0,
+    "green": 100,
+    "blue": 0,
+    "white": 0
+   },
+   "label": "U status running DIY 1"
+  }
+ ],
+ "key": [
+  {
+   "hex": "bd068a01ffffffff4a",
+   "ok": true
+  }
+ ],
+ "programs": [
+  {
+   "program": 3,
+   "frames": [
+    "bd06828003007fff46",
+    "bd0883000600000000004e",
+    "bd0883010c1e64320a1427",
+    "bd088302173b05060708b6"
+   ],
+   "points": [
+    [
+     6,
+     0,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     12,
+     30,
+     100,
+     50,
+     10,
+     20
+    ],
+    [
+     23,
+     59,
+     5,
+     6,
+     7,
+     8
+    ]
+   ],
+   "label": "M2 DIY readback via listen / query_program(3) +listen"
+  },
+  {
+   "program": 3,
+   "frames": [
+    "bd06828003007fff46",
+    "bd088300000100640000ad",
+    "bd0883010003000000004c",
+    "bd088302173b000000009c"
+   ],
+   "points": [
+    [
+     0,
+     1,
+     0,
+     100,
+     0,
+     0
+    ],
+    [
+     0,
+     3,
+     0,
+     0,
+     0,
+     0
+    ],
+    [
+     23,
+     59,
+     0,
+     0,
+     0,
+     0
+    ]
+   ],
+   "label": "W wrap-around + fade using a manipulated light clock (DIY 1) / W readback +listen"
+  },
+  {
+   "program": 3,
+   "frames": [
+    "bd0682800c007f3585",
+    "bd088300003b0f303d201f",
+    "bd088301012e31460e4a47",
+    "bd088302051520025e1c00",
+    "bd088303081e3524186345",
+    "bd088304082b3215620a32",
+    "bd0883050c0e1250503952",
+    "bd0883060f3511110101b6",
+    "bd08830712051b641c1617",
+    "bd088308150f1626291af3",
+    "bd08830916094657511b79",
+    "bd08830a160f18591a3234",
+    "bd08830b172227032f361b"
+   ],
+   "points": [
+    [
+     0,
+     59,
+     15,
+     48,
+     61,
+     32
+    ],
+    [
+     1,
+     46,
+     49,
+     70,
+     14,
+     74
+    ],
+    [
+     5,
+     21,
+     32,
+     2,
+     94,
+     28
+    ],
+    [
+     8,
+     30,
+     53,
+     36,
+     24,
+     99
+    ],
+    [
+     8,
+     43,
+     50,
+     21,
+     98,
+     10
+    ],
+    [
+     12,
+     14,
+     18,
+     80,
+     80,
+     57
+    ],
+    [
+     15,
+     53,
+     17,
+     17,
+     1,
+     1
+    ],
+    [
+     18,
+     5,
+     27,
+     100,
+     28,
+     22
+    ],
+    [
+     21,
+     15,
+     22,
+     38,
+     41,
+     26
+    ],
+    [
+     22,
+     9,
+     70,
+     87,
+     81,
+     27
+    ],
+    [
+     22,
+     15,
+     24,
+     89,
+     26,
+     50
+    ],
+    [
+     23,
+     34,
+     39,
+     3,
+     47,
+     54
+    ]
+   ],
+   "label": "R inter-frame gap vs frame loss (12-point upload, DIY 1) / R readback T=100 +listen"
+  },
+  {
+   "program": 3,
+   "frames": [
+    "bd06828000007f074b"
+   ],
+   "points": [],
+   "label": "ORIGINAL query_program 3"
+  },
+  {
+   "program": 4,
+   "frames": [
+    "bd06828100007f074c"
+   ],
+   "points": [],
+   "label": "ORIGINAL query_program 4"
+  },
+  {
+   "program": 5,
+   "frames": [
+    "bd06828200007f074d"
+   ],
+   "points": [],
+   "label": "ORIGINAL query_program 5"
+  }
+ ],
+ "upload": {
+  "program": 3,
+  "points": [
+   [
+    6,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    12,
+    30,
+    100,
+    50,
+    10,
+    20
+   ],
+   [
+    23,
+    59,
+    5,
+    6,
+    7,
+    8
+   ]
+  ],
+  "frames": [
+   "ad06098003007fffbd",
+   "ad080a00060000000000c5",
+   "ad080a010c1e64320a149e",
+   "ad080a02173b050607082d"
+  ],
+  "label": "M1 upload frame 0..3"
+ },
+ "upload_wrap": {
+  "program": 3,
+  "points": [
+   [
+    0,
+    1,
+    0,
+    100,
+    0,
+    0
+   ],
+   [
+    0,
+    3,
+    0,
+    0,
+    0,
+    0
+   ],
+   [
+    23,
+    59,
+    0,
+    0,
+    0,
+    0
+   ]
+  ],
+  "frames": [
+   "ad06098003007fffbd",
+   "ad080a0000010064000024",
+   "ad080a01000300000000c3",
+   "ad080a02173b0000000013"
+  ],
+  "label": "W upload frame 0..3"
+ }
+}

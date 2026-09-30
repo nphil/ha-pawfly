@@ -1,0 +1,325 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "user": {
+        "title": "Set up a Pawfly light",
+        "description": "Choose the light. It must be powered and in range of a Bluetooth adapter or proxy, and not connected to the phone app.",
+        "data": {
+          "address": "Light",
+          "password": "Password"
+        },
+        "data_description": {
+          "address": "Lights Home Assistant can hear right now.",
+          "password": "The light's 8-digit password. New lights use 12345678."
+        }
+      },
+      "bluetooth_confirm": {
+        "title": "Set up {name}",
+        "description": "Home Assistant found {name}. Enter its password to connect. The password is checked with the light before it is added.",
+        "data": {
+          "password": "Password"
+        },
+        "data_description": {
+          "password": "The light's 8-digit password. New lights use 12345678."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Password for {name}",
+        "description": "{name} no longer accepts the saved password (it was probably changed in the phone app). Enter its current 8-digit password.",
+        "data": {
+          "password": "Password"
+        },
+        "data_description": {
+          "password": "The light's current 8-digit password."
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to the light. Make sure it is powered, in range of a Bluetooth adapter or proxy, and not connected to the phone app.",
+      "invalid_auth": "The light did not accept that password.",
+      "invalid_password_format": "The password is exactly 8 digits.",
+      "unknown": "Unexpected error. See the Home Assistant log."
+    },
+    "abort": {
+      "already_configured": "This light is already set up.",
+      "no_devices_found": "No Pawfly lights were found. Power the light, keep it in range of a Bluetooth adapter or proxy and disconnect the phone app, then try again.",
+      "reauth_successful": "The password was updated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Connection",
+        "description": "How Home Assistant stays connected to the light. The light accepts a single Bluetooth connection, so the phone app cannot connect while Home Assistant holds it (use the Release link button to hand it over for a while).",
+        "data": {
+          "keep_connected": "Keep the connection open",
+          "poll_interval": "Status check interval",
+          "preferred_proxy": "Preferred Bluetooth proxy"
+        },
+        "data_description": {
+          "keep_connected": "On: stay connected for instant control and live state. Off: connect only when needed and let go after a short idle time (state can be out of date in between).",
+          "poll_interval": "Seconds of silence after which Home Assistant asks the light for its status.",
+          "preferred_proxy": "Connect through this proxy when it can hear the light. Automatic lets Home Assistant pick the strongest signal; choose it to go back after picking a proxy."
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "connected": {
+        "name": "Connected"
+      }
+    },
+    "button": {
+      "sync_time": {
+        "name": "Sync time"
+      },
+      "release_link": {
+        "name": "Release link"
+      }
+    },
+    "select": {
+      "program": {
+        "name": "Program",
+        "state": {
+          "manual": "Manual",
+          "japanese_style": "Japanese style",
+          "dutch_style": "Dutch style",
+          "jungle_style": "Jungle style",
+          "diy_1": "DIY 1",
+          "diy_2": "DIY 2",
+          "diy_3": "DIY 3"
+        }
+      }
+    },
+    "sensor": {
+      "mode": {
+        "name": "Mode",
+        "state": {
+          "manual": "Manual",
+          "scene": "Scene",
+          "program": "Program"
+        }
+      }
+    }
+  },
+  "selector": {
+    "preferred_proxy": {
+      "options": {
+        "automatic": "Automatic (strongest signal)"
+      }
+    },
+    "program": {
+      "options": {
+        "japanese_style": "Japanese style",
+        "dutch_style": "Dutch style",
+        "jungle_style": "Jungle style",
+        "diy_1": "DIY 1",
+        "diy_2": "DIY 2",
+        "diy_3": "DIY 3"
+      }
+    }
+  },
+  "issues": {
+    "unreachable": {
+      "title": "{name} has been unreachable",
+      "description": "Home Assistant has not been able to reach {name} over Bluetooth for {minutes} minutes. It was last connected through: {proxy}.\n\nCheck that the light is powered, that the phone app is not connected to it (it accepts one connection), and that a Bluetooth proxy is in range. This repair clears itself once the light connects again."
+    }
+  },
+  "exceptions": {
+    "auth_failed": {
+      "message": "{name} rejected the saved password. Re-authenticate the integration."
+    },
+    "command_failed": {
+      "message": "The command to {name} failed: {error}"
+    },
+    "demo_needs_program": {
+      "message": "Demo only works while a schedule program is running on {name}. Choose a program first."
+    },
+    "device_not_found": {
+      "message": "Device {device_id} was not found."
+    },
+    "entry_not_loaded": {
+      "message": "{name} is not set up right now (it is reloading, released or offline)."
+    },
+    "invalid_name": {
+      "message": "Invalid name: {error}"
+    },
+    "invalid_password": {
+      "message": "Invalid password: {error}"
+    },
+    "invalid_points": {
+      "message": "Invalid program points: {error}"
+    },
+    "not_a_pawfly_device": {
+      "message": "Device {device_id} is not a Pawfly light."
+    },
+    "not_connected": {
+      "message": "{name} is not connected right now: {error}"
+    },
+    "not_ready": {
+      "message": "Could not reach {name}: {error}"
+    },
+    "password_change_unconfirmed": {
+      "message": "{name} could not be reached to confirm the new password. It may already use it: Home Assistant keeps the new password and checks it the next time the light connects (if the light turns out to still use the old one, nothing changes)."
+    },
+    "password_not_accepted": {
+      "message": "{name} did not accept the new password, so the saved password was not changed."
+    },
+    "program_read_only": {
+      "message": "{program} is a built-in style and cannot be changed. Only DIY 1, DIY 2 and DIY 3 can be written."
+    },
+    "program_readback_mismatch": {
+      "message": "{name} did not store {program} as sent: expected {expected} point(s), read back {found} (or different values). The program was not verified; try again."
+    },
+    "release_failed": {
+      "message": "Could not release the Bluetooth link of: {names}. The light may still be held; see the Home Assistant log."
+    },
+    "unknown_effect": {
+      "message": "\"{effect}\" is not an effect of this light."
+    }
+  },
+  "services": {
+    "get_program": {
+      "name": "Get program",
+      "description": "Returns the time points of a schedule program. The three built-in styles come from the vendor app's own curves; DIY 1-3 are read back from the light over Bluetooth.",
+      "fields": {
+        "device_id": {
+          "name": "Light",
+          "description": "The Pawfly light."
+        },
+        "program": {
+          "name": "Program",
+          "description": "A program name, or its number 0-5 (0-2 built-in styles, 3-5 DIY 1-3)."
+        }
+      }
+    },
+    "set_program": {
+      "name": "Set program",
+      "description": "Replaces DIY 1, 2 or 3 on the light, then reads it back to verify it was stored. This overwrites what the light had in that slot.",
+      "fields": {
+        "device_id": {
+          "name": "Light",
+          "description": "The Pawfly light."
+        },
+        "program": {
+          "name": "Program",
+          "description": "Which DIY slot to write (DIY 1-3, or 3-5)."
+        },
+        "points": {
+          "name": "Points",
+          "description": "Up to 12 points, each with a time (HH:MM, 24 h, unique) and red, green, blue and white in percent (0-100). They are sorted by time. Between points the light moves from one colour to the next."
+        }
+      }
+    },
+    "set_channel": {
+      "name": "Set channels",
+      "description": "Sets only the channels you give (0-100 %) and leaves the others as they are; this puts the light in manual mode. It does not turn the light on.",
+      "fields": {
+        "device_id": {
+          "name": "Light",
+          "description": "The Pawfly light."
+        },
+        "red": {
+          "name": "Red",
+          "description": "Red level in percent."
+        },
+        "green": {
+          "name": "Green",
+          "description": "Green level in percent."
+        },
+        "blue": {
+          "name": "Blue",
+          "description": "Blue level in percent."
+        },
+        "white": {
+          "name": "White",
+          "description": "White level in percent."
+        }
+      }
+    },
+    "preview": {
+      "name": "Preview colour",
+      "description": "Shows a colour on the light immediately without changing its mode (used while editing a DIY program). End the preview when done; a preview that is not refreshed for 30 seconds ends by itself.",
+      "fields": {
+        "device_id": {
+          "name": "Light",
+          "description": "The Pawfly light."
+        },
+        "red": {
+          "name": "Red",
+          "description": "Red level in percent."
+        },
+        "green": {
+          "name": "Green",
+          "description": "Green level in percent."
+        },
+        "blue": {
+          "name": "Blue",
+          "description": "Blue level in percent."
+        },
+        "white": {
+          "name": "White",
+          "description": "White level in percent."
+        },
+        "end": {
+          "name": "End preview",
+          "description": "Stop the preview and go back to what the light was doing."
+        }
+      }
+    },
+    "sync_time": {
+      "name": "Sync time",
+      "description": "Sets the light's clock to Home Assistant's local time. This also happens on every reconnect and daily at 03:17.",
+      "fields": {
+        "device_id": {
+          "name": "Light",
+          "description": "The Pawfly light."
+        }
+      }
+    },
+    "rename": {
+      "name": "Rename light",
+      "description": "Changes the Bluetooth name of the light (as the phone app does). Enter the name without the PY4C prefix, up to 16 characters.",
+      "fields": {
+        "device_id": {
+          "name": "Light",
+          "description": "The Pawfly light."
+        },
+        "name": {
+          "name": "Name",
+          "description": "The new name, without the PY4C prefix."
+        }
+      }
+    },
+    "change_password": {
+      "name": "Change password",
+      "description": "Changes the light's 8-digit password, proves the light accepts it on a fresh connection, then saves it here. If the light cannot be reached to confirm, the new password is kept and checked on the next connection. The phone app has to be given the new password too.",
+      "fields": {
+        "device_id": {
+          "name": "Light",
+          "description": "The Pawfly light."
+        },
+        "new_password": {
+          "name": "New password",
+          "description": "Exactly 8 digits."
+        }
+      }
+    },
+    "release_link": {
+      "name": "Release link",
+      "description": "Drops the Bluetooth connection cleanly so the light is free (before restarting Home Assistant, or to use the phone app), then reconnects after the delay.",
+      "fields": {
+        "device_id": {
+          "name": "Light",
+          "description": "The Pawfly light. Leave empty to release every Pawfly light."
+        },
+        "resume_after": {
+          "name": "Reconnect after",
+          "description": "Seconds until Home Assistant connects again. 0 keeps the light released."
+        }
+      }
+    }
+  }
+}
