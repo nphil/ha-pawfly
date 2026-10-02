@@ -96,10 +96,12 @@ data:
     - {time: "22:00", red: 0,  green: 0,  blue: 0,  white: 0}
 ```
 
-Restarting Home Assistant does not unload integrations, so a held Bluetooth link can be left
-half-open and the light then stops advertising. Call `pawfly.release_link` before a restart (for
-example from your safe-restart script); it unloads the light cleanly, with a hard time limit, and
-reports honestly if that failed.
+Restarting or stopping Home Assistant does not unload integrations. From 0.2.0 the integration
+releases each light's Bluetooth link itself, in Home Assistant's shutdown stage (while Bluetooth
+and the ESPHome proxies are still up), so a restart no longer leaves a half-open link that makes the
+light stop advertising. `pawfly.release_link` stays for handing the light to the phone app, or for
+scripts that still call it before a restart; it unloads the light cleanly, with a hard time limit,
+and reports honestly if that failed.
 
 ## Options
 

@@ -1,12 +1,13 @@
 """Release the Bluetooth link cleanly, and resume it later.
 
-Home Assistant does not unload config entries on shutdown: it fires ``EVENT_HOMEASSISTANT_STOP``
-while the Bluetooth stack is torn down concurrently, so a held GATT link can die without a
-completed disconnect and leave the light believing it is still connected (it then stops
-advertising and nobody can reach it). The only clean path is to drop the link while Home
-Assistant and its Bluetooth stack are both alive. ``script.safe_restart`` calls
-``<domain>.release_link`` on every BLE integration for exactly that reason, and the diagnostic
-``release link`` button does the same for one light (for example to hand it to the vendor app).
+Home Assistant does not unload config entries on shutdown, and ``bluetooth`` stops its stack on
+``EVENT_HOMEASSISTANT_STOP``, so a link released only then can die without a completed
+disconnect and leave the light believing it is still connected (it then stops advertising and
+nobody can reach it). The clean path is to drop the link while Home Assistant and its Bluetooth
+stack are both alive: ``__init__`` does that in one shutdown job per light (Home Assistant runs
+those before it fires the stop event). ``<domain>.release_link`` stays for the same purpose on
+demand (``script.safe_restart``), and the diagnostic ``release link`` button does it for one light
+(for example to hand it to the vendor app).
 
 Implemented by unloading the entry, because unload is the one proven teardown path (platforms
 first, then the link supervisor, which disconnects with a hard deadline). What matters:
@@ -26,12 +27,11 @@ from collections.abc import Iterable
 import logging
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
-from homeassistant.const import EVENT_HOMEASSISTANT_STOP
-from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_call_later
 
-from . import outage
+from . import outage, shutdown
 from .const import DOMAIN, RELEASE_DEADLINE
 
 _LOGGER = logging.getLogger(__name__)
@@ -40,20 +40,21 @@ _RESUME = "resume"
 
 
 def _resume_timers(hass: HomeAssistant) -> dict[str, CALLBACK_TYPE]:
-    """The ``{entry_id: cancel}`` map of pending resumes (created with its shutdown hook)."""
+    """The ``{entry_id: cancel}`` map of pending resumes."""
     domain_data = hass.data.setdefault(DOMAIN, {})
     timers: dict[str, CALLBACK_TYPE] | None = domain_data.get(_RESUME)
     if timers is None:
         timers = domain_data[_RESUME] = {}
-
-        @callback
-        def _cancel_all(_event: Event) -> None:
-            for cancel in timers.values():
-                cancel()
-            timers.clear()
-
-        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _cancel_all)
     return timers
+
+
+@callback
+def async_cancel_all_resumes(hass: HomeAssistant) -> None:
+    """Forget every pending resume (Home Assistant is shutting down)."""
+    timers = _resume_timers(hass)
+    for cancel in timers.values():
+        cancel()
+    timers.clear()
 
 
 @callback
@@ -76,7 +77,7 @@ def _schedule_resume(hass: HomeAssistant, entry_id: str, delay: int) -> None:
 
     async def _resume(_now: object) -> None:
         timers.pop(entry_id, None)
-        if hass.is_stopping:
+        if hass.is_stopping or shutdown.in_progress(hass):
             return
         entry = hass.config_entries.async_get_entry(entry_id)
         # Only the same entry, still enabled, still released: never resurrect a removed or

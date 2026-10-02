@@ -260,6 +260,7 @@ class PawflyLink:
         self._unsub_advert: CALLBACK_TYPE | None = None
 
         self._stopping = False
+        self._latched = False
         self._ready = False
         self._auth_failed = False
         self._disconnected = asyncio.Event()
@@ -382,6 +383,15 @@ class PawflyLink:
         self._task = self.hass.async_create_background_task(
             self._supervise(), f"pawfly link {self.address}"
         )
+
+    def latch(self) -> None:
+        """Never open another connection from now on (the process is shutting down).
+
+        Unlike ``async_stop`` this leaves a live session alone, so a last command (ending a
+        preview) can still use it; it is permanent, ``start`` does not clear it.
+        """
+        self._latched = True
+        self._wake.set()
 
     async def async_stop(self) -> None:
         """Release the light and stop the supervisor; bounded (about 10 s at worst)."""
@@ -532,7 +542,7 @@ class PawflyLink:
             return
         if self._auth_failed:
             raise AuthFailed("the light refused the password")
-        if self._stopping:
+        if self._stopping or self._latched:
             raise NotConnected("the link is stopping")
         self.request_link()
         if kick:
@@ -573,6 +583,8 @@ class PawflyLink:
         self._program_waiters.clear()
 
     def _wanted(self) -> bool:
+        if self._latched:
+            return False
         if self._hold:
             return True
         now = time.monotonic()
@@ -773,7 +785,7 @@ class PawflyLink:
                 ble_device_callback=self._current_device_or_raise,
             )
         self._last_device = device
-        if self._stopping:
+        if self._stopping or self._latched:
             await self._teardown(client)
             raise NotConnected("the link is stopping")
         return client

@@ -203,10 +203,15 @@ class PawflyCoordinator(DataUpdateCoordinator[protocol.Status | None]):
         )
 
     async def async_shutdown(self) -> None:
-        """Release the light and stop everything; bounded and idempotent."""
+        """Release the light and stop everything; bounded and idempotent.
+
+        Used by unload and by the shutdown job. The latch comes first: from here on nothing
+        (supervisor, backoff, advertisement, poll, command) opens a connection or uses the link.
+        """
         if self._closing:
             return
         self._closing = True
+        self.link.latch()
         if self._unsub_time_sync is not None:
             self._unsub_time_sync()
             self._unsub_time_sync = None
@@ -220,10 +225,6 @@ class PawflyCoordinator(DataUpdateCoordinator[protocol.Status | None]):
         self._status_debouncer.async_shutdown()
         await self.link.async_stop()
         await super().async_shutdown()
-
-    async def async_handle_stop(self) -> None:
-        """Home Assistant is stopping: drop the link while Bluetooth is still alive."""
-        await self.async_shutdown()
 
     # ------------------------------------------------------------------ callbacks ------
 
@@ -279,6 +280,8 @@ class PawflyCoordinator(DataUpdateCoordinator[protocol.Status | None]):
         Failures are not update errors: whether entities are available is decided by the
         link state, so a poll that cannot reach the light keeps the last status.
         """
+        if self._closing:
+            return self.data
         try:
             if self.keep_connected:
                 if not self.link.ready:
@@ -316,6 +319,12 @@ class PawflyCoordinator(DataUpdateCoordinator[protocol.Status | None]):
     async def _tx(self, *, timeout: float | None = None) -> AsyncIterator[Transaction]:
         """``link.transaction()`` with link errors turned into translated HA errors."""
         name = self.config_entry.title
+        if self._closing:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="not_connected",
+                translation_placeholders={"name": name, "error": "Home Assistant is shutting down"},
+            )
         try:
             if timeout is None:
                 async with self.link.transaction() as tx:

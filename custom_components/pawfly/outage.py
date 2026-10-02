@@ -22,11 +22,12 @@ from time import monotonic
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry, ConfigEntryState
-from homeassistant.const import CONF_ADDRESS, EVENT_HOMEASSISTANT_STOP
-from homeassistant.core import CALLBACK_TYPE, Event, HomeAssistant, callback
+from homeassistant.const import CONF_ADDRESS
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_call_later
 
+from . import shutdown
 from .const import CONF_LAST_HOLDING_PROXY, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -58,19 +59,23 @@ def issue_id_for(address: str) -> str:
 
 
 def _outages(hass: HomeAssistant) -> dict[str, _Outage]:
-    """The process-scoped ``{ADDRESS: outage}`` map (created with its shutdown hook)."""
+    """The process-scoped ``{ADDRESS: outage}`` map."""
     domain_data = hass.data.setdefault(DOMAIN, {})
     outages: dict[str, _Outage] | None = domain_data.get(_OUTAGES)
     if outages is None:
         outages = domain_data[_OUTAGES] = {}
-
-        @callback
-        def _cancel_all(_event: Event) -> None:
-            for outage in outages.values():
-                _cancel_timer(outage)
-
-        hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _cancel_all)
     return outages
+
+
+@callback
+def async_quiet(hass: HomeAssistant) -> None:
+    """Home Assistant is shutting down: stop every outage timer.
+
+    The links dropped on purpose are then not mistaken for an outage and no repair is created;
+    the issue registry is left exactly as it is.
+    """
+    for outage in _outages(hass).values():
+        _cancel_timer(outage)
 
 
 def _cancel_timer(outage: _Outage) -> None:
@@ -92,6 +97,8 @@ def async_link_lost(hass: HomeAssistant, entry: ConfigEntry) -> None:
     Idempotent. The first drop of an outage is recorded once and never restamped, so a
     reload in the middle of an outage keeps counting from the original drop.
     """
+    if shutdown.in_progress(hass):
+        return
     address = str(entry.data[CONF_ADDRESS]).upper()
     outages = _outages(hass)
     outage = outages.get(address)
@@ -105,6 +112,8 @@ def async_link_lost(hass: HomeAssistant, entry: ConfigEntry) -> None:
 @callback
 def async_link_recovered(hass: HomeAssistant, address: str) -> None:
     """A session was established: the outage is over (clock, timer and repair)."""
+    if shutdown.in_progress(hass):
+        return
     _clear(hass, address.upper())
 
 
@@ -131,6 +140,8 @@ def _link_healthy(entry: ConfigEntry) -> bool:
 @callback
 def _reconcile(hass: HomeAssistant, address: str) -> None:
     """Converge clock, timer and repair on the light's live state."""
+    if shutdown.in_progress(hass):
+        return
     outage = _outages(hass).get(address)
     if outage is None:
         return

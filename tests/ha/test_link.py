@@ -21,13 +21,14 @@ from unittest.mock import patch
 import pytest
 from bleak.exc import BleakError
 from homeassistant.config_entries import ConfigEntryDisabler, ConfigEntryState
-from homeassistant.const import CONF_ADDRESS, CONF_PASSWORD, EVENT_HOMEASSISTANT_STOP, STATE_UNAVAILABLE
+from homeassistant.const import CONF_ADDRESS, CONF_PASSWORD, STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry, async_fire_time_changed
 
+import custom_components.pawfly as init_module
 from custom_components.pawfly import coordinator as coordinator_module
 from custom_components.pawfly import link as link_module
 from custom_components.pawfly import outage as outage_module
@@ -659,12 +660,87 @@ async def test_unload_stays_bounded_when_the_disconnect_hangs(hass, config_entry
     assert config_entry.state is ConfigEntryState.NOT_LOADED and link_tasks() == []
 
 
-async def test_home_assistant_stopping_drops_the_link_while_the_entry_stays_loaded(hass, config_entry, light):
+async def run_shutdown_stage(hass: HomeAssistant) -> None:
+    """Stage 1 of ``HomeAssistant.async_stop``: every shutdown job at once, with the state still ``running``.
+
+    The real ``async_stop`` also stops the harness' own Home Assistant; this runs just the stage the
+    integration hooks into, the way core does (``async_run_hass_job`` for each, then ``gather``).
+    """
+    tasks = [task for job in list(hass._shutdown_jobs) if (task := hass.async_run_hass_job(job.job, *job.args))]
+    await asyncio.gather(*tasks, return_exceptions=True)
+
+
+def release_jobs(hass: HomeAssistant) -> list[str]:
+    return [job.job.name for job in hass._shutdown_jobs if job.job.name.startswith("pawfly release BLE link")]
+
+
+async def test_each_entry_has_one_shutdown_job_that_goes_away_with_the_entry(hass, config_entry):
+    assert release_jobs(hass) == [f"pawfly release BLE link {ENTRY_TITLE}"]
+    assert await hass.config_entries.async_unload(config_entry.entry_id)
+    assert release_jobs(hass) == []
+    assert await hass.config_entries.async_setup(config_entry.entry_id)
+    assert release_jobs(hass) == [f"pawfly release BLE link {ENTRY_TITLE}"]
+
+
+async def test_a_latched_link_does_not_reconnect_after_a_drop_even_before_it_is_stopped(hass, config_entry, light):
+    """The latch comes first: in the moment between it and the disconnect nothing may redial."""
+    link = config_entry.runtime_data.link
+    link.latch()
+    light.drop_link()
+    await asyncio.sleep(0.4)  # many times the (shrunken) reconnect backoff
+    assert light.connections == 1 and link.connect_attempts == 1 and not link.ready
+    with pytest.raises(link_module.NotConnected):
+        async with link.transaction(timeout=0.1):
+            pass
+
+
+async def test_the_shutdown_job_releases_the_link_and_nothing_connects_again(hass, config_entry, light, caplog):
+    coordinator = config_entry.runtime_data
     light.clear()
-    hass.bus.async_fire(EVENT_HOMEASSISTANT_STOP)
-    await hass.async_block_till_done()
+    with caplog.at_level("INFO"):
+        await run_shutdown_stage(hass)
+        await hass.async_block_till_done()
     assert light.events == [("stop_notify",), ("disconnect",)] and light.disconnections == 1
     assert config_entry.state is ConfigEntryState.LOADED and link_tasks() == []
+    assert f"Released BLE link to {ENTRY_TITLE} at shutdown in" in caplog.text
+
+    # Latched: an advertisement, a kick, a poll, a command and a late setup all stay off the air.
+    light.clear()
+    light.fire_advertisement()
+    coordinator.link.kick(0)
+    coordinator.link.request_link()
+    await coordinator.async_refresh()
+    with pytest.raises(HomeAssistantError):
+        await coordinator.async_sync_time()
+    await fire(hass, DEFAULT_POLL_INTERVAL + 2)
+    assert (light.events, light.connections) == ([], 1)
+    assert await hass.config_entries.async_unload(config_entry.entry_id)
+    assert await hass.config_entries.async_setup(config_entry.entry_id) is False
+    assert config_entry.state is ConfigEntryState.SETUP_RETRY and light.connections == 1 and link_tasks() == []
+
+
+async def test_a_hanging_disconnect_is_bounded_and_the_shutdown_job_never_raises(
+    hass, config_entry, light, monkeypatch, caplog
+):
+    gate = asyncio.Event()
+
+    async def hang(self, **_):
+        await gate.wait()
+
+    monkeypatch.setattr(FakeGattClient, "disconnect", hang)
+    monkeypatch.setattr(link_module, "DISCONNECT_DEADLINE", 30.0)  # the link's own deadline must not be what ends it
+    monkeypatch.setattr(link_module, "STOP_GRACE", 30.0)
+    monkeypatch.setattr(init_module, "SHUTDOWN_RELEASE_TIMEOUT", 0.2)
+
+    job = next(job for job in hass._shutdown_jobs if job.job.name.startswith("pawfly release BLE link"))
+    started = asyncio.get_running_loop().time()
+    await hass.async_run_hass_job(job.job, *job.args)  # a raise here would fail the test
+    assert asyncio.get_running_loop().time() - started < 1.0
+    assert f"Releasing the BLE link to {ENTRY_TITLE} at shutdown failed" in caplog.text
+    assert config_entry.state is ConfigEntryState.LOADED
+
+    gate.set()  # let the abandoned supervisor finish its disconnect so nothing outlives the test
+    await wait_until(lambda: link_tasks() == [], message="the supervisor to finish")
 
 
 # -- release_link -----------------------------------------------------------------------------------------
@@ -826,14 +902,25 @@ async def test_a_stale_resume_does_not_bring_back_an_entry_that_was_set_up_and_u
     assert config_entry.state is ConfigEntryState.NOT_LOADED
 
 
-async def test_a_pending_resume_does_not_survive_home_assistant_stopping(hass, config_entry):
+async def test_a_pending_resume_does_not_survive_the_shutdown_stage(hass, config_entry):
+    """The light is released (no entry job to run), then Home Assistant shuts down before the resume."""
     await release(hass, resume_after=60)
-    hass.bus.async_fire(EVENT_HOMEASSISTANT_STOP)
-    await hass.async_block_till_done()
+    await run_shutdown_stage(hass)
     with spy_on_setup(hass) as setup:
         await fire(hass, 65)
     setup.assert_not_called()
     assert config_entry.state is ConfigEntryState.NOT_LOADED
+
+
+async def test_the_shutdown_job_is_not_an_outage_and_raises_no_repair(hass, config_entry, light, outage_clock):
+    light.connect_error = BleakError("out of range")
+    light.drop_link()
+    await wait_until(lambda: hass.data[DOMAIN].get("outages"), message="the outage clock to start")
+    await elapse(hass, outage_clock, 600)  # the 15-minute deadline timer is armed
+
+    await run_shutdown_stage(hass)
+    await elapse(hass, outage_clock, 900)
+    assert issue(hass) is None
 
 
 async def test_releasing_a_light_that_is_not_connected_is_harmless(hass, setup_unreachable):

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.0 - 2026-10-02
+
+- Every restart or shutdown of Home Assistant now lets go of the light's Bluetooth link cleanly,
+  on its own. The old hook ran at the same moment Bluetooth was shutting down and could lose that
+  race, leaving a half-open link on the ESPHome proxy. It now runs in Home Assistant's earlier
+  shutdown stage, one job per light, with an 8 second limit, and never blocks the shutdown.
+- From that moment the integration never connects again in that Home Assistant run: no reconnects,
+  polls, commands, setup or pending `release_link` resume. Outage timers and the "unreachable"
+  repair are stilled first, so the deliberate disconnect is not reported as an outage.
+- `release_link` and the Release link button are unchanged.
+
 ## 0.1.0 - 2026-09-30
 
 First release.
