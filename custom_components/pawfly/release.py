@@ -6,7 +6,7 @@ disconnect and leave the light believing it is still connected (it then stops ad
 nobody can reach it). The clean path is to drop the link while Home Assistant and its Bluetooth
 stack are both alive: ``__init__`` does that in one shutdown job per light (Home Assistant runs
 those before it fires the stop event). ``<domain>.release_link`` stays for the same purpose on
-demand (``script.safe_restart``), and the diagnostic ``release link`` button does it for one light
+demand, and the diagnostic ``release link`` button does it for one light
 (for example to hand it to the vendor app).
 
 Implemented by unloading the entry, because unload is the one proven teardown path (platforms

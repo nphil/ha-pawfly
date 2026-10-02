@@ -2,7 +2,7 @@
 
 Every action targets one light through ``device_id`` (the Home Assistant device id), except
 ``release_link`` where it is optional (all lights when omitted, like the other BLE
-integrations' ``release_link``, which ``script.safe_restart`` calls domain-wide).
+integrations' ``release_link``).
 
 Malformed input is rejected by the schema (``vol.Invalid``, websocket error ``invalid_format``);
 well-formed input that cannot be acted on raises ``ServiceValidationError`` (websocket error
