@@ -108,7 +108,7 @@ async def async_release_entries(hass: HomeAssistant, entries: Iterable[ConfigEnt
         if entry.state is not ConfigEntryState.LOADED:
             if was_waiting:
                 released.append(entry)  # still released: only its resume changes
-            continue  # otherwise nothing is held: not loaded, or still retrying its setup
+            continue  # otherwise nothing is held: the entry is not loaded
         try:
             async with asyncio.timeout(RELEASE_DEADLINE):
                 unloaded = await hass.config_entries.async_unload(entry.entry_id)

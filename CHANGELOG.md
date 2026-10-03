@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.1 - 2026-10-02
+
+- Home Assistant now starts faster: this integration no longer holds up startup waiting for the
+  light. Before, setup waited up to 20 s for the light's first answer (9.7 s measured on the last
+  restart) and, when the light was slow, failed and was retried later with Home Assistant's own,
+  longer, delays. Now setup waits at most about 4 s and returns either way.
+- A light that has not answered in that time keeps connecting in the background: its entities show
+  as unavailable and fill in as soon as the first status arrives. Nothing is sent to the light when
+  that happens (only the usual password check, clock sync and status request).
+- A wrong password is still caught at once and starts re-authentication; if the light only refuses
+  it after setup has finished, the same re-authentication starts then.
+- No single connection step may hang for longer than 10 s any more (a connect used to be allowed
+  30 s). After a connect or Bluetooth step hangs on the preferred proxy, the next attempt skips that
+  proxy once and uses another.
+- `release_link` also releases a light that is still connecting, since it is now part of a loaded entry.
+- Shutdown release, entity ids, actions and options are unchanged.
+
 ## 0.2.0 - 2026-10-02
 
 - Every restart or shutdown of Home Assistant now lets go of the light's Bluetooth link cleanly,

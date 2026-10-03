@@ -34,9 +34,11 @@ from custom_components.pawfly import link as link_module
 from custom_components.pawfly import outage as outage_module
 from custom_components.pawfly import protocol
 from custom_components.pawfly import release as release_module
+from custom_components.pawfly import shutdown as shutdown_module
 from custom_components.pawfly.const import (
     CONF_KEEP_CONNECTED,
     CONF_LAST_HOLDING_PROXY,
+    CONF_PREFERRED_PROXY,
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
 )
@@ -386,35 +388,145 @@ async def test_unanswered_status_queries_get_a_wedged_link_dropped_and_rebuilt(c
     await wait_until(lambda: coordinator.link.ready and light.connections == 2, message="a new session")
 
 
-async def test_a_light_that_never_answers_the_first_session_leaves_setup_retrying_with_no_link_left(
-    hass, light, make_entry, monkeypatch
+async def test_a_light_that_never_answers_does_not_hold_setup_up_and_is_picked_up_when_it_does(
+    hass, light, setup_entry, monkeypatch
 ):
-    monkeypatch.setattr(coordinator_module, "FIRST_SESSION_TIMEOUT", 0.6)
+    monkeypatch.setattr(coordinator_module, "FIRST_SESSION_TIMEOUT", 0.4)
     light.silent = True
+    started = asyncio.get_running_loop().time()
+    entry = await setup_entry()
+    assert asyncio.get_running_loop().time() - started < coordinator_module.FIRST_SESSION_TIMEOUT + 0.5
+    assert entry.state is ConfigEntryState.LOADED
+    assert hass.states.get(LIGHT).state == STATE_UNAVAILABLE and hass.states.get(CONNECTED).state == "off"
+    assert len(link_tasks()) == 1  # the connect attempts go on in the background
+
+    light.silent = False
+    await wait_until(lambda: hass.states.get(LIGHT).state == "on", message="the light to appear once it answers")
+    assert entry.runtime_data.link.ready and hass.states.get(CONNECTED).state == "on"
+
+
+async def test_setup_returns_within_its_budget_when_the_connect_hangs_forever_and_the_hang_is_abandoned(
+    hass, light, setup_entry, monkeypatch
+):
+    monkeypatch.setattr(coordinator_module, "FIRST_SESSION_TIMEOUT", 0.5)
+    monkeypatch.setattr(link_module, "CONNECT_DEADLINE", 0.3)
+    light.connect_delay = 3600  # the proxy never answers
+    started = asyncio.get_running_loop().time()
+    entry = await setup_entry()
+    assert asyncio.get_running_loop().time() - started < coordinator_module.FIRST_SESSION_TIMEOUT + 0.5
+    assert entry.state is ConfigEntryState.LOADED and hass.states.get(LIGHT).state == STATE_UNAVAILABLE
+
+    link = entry.runtime_data.link
+    await wait_until(lambda: link.failures >= 1, message="the hung connect to be abandoned at its own deadline")
+    light.connect_delay = 0.0
+    await wait_until(lambda: hass.states.get(LIGHT).state == "on", message="the next attempt to connect")
+
+
+async def test_a_connect_that_hangs_on_the_preferred_proxy_is_retried_without_the_preference(
+    hass, light, setup_entry, monkeypatch
+):
+    monkeypatch.setattr(link_module, "CONNECT_DEADLINE", 0.2)
+    chosen: list[str | None] = []
+    hooks: dict = {}
+
+    def factory(base, preferred, *, on_choice=None, **_):
+        hooks.update(preferred=preferred, on_choice=on_choice)
+        return base
+
+    async def connect(client_class, device, name, disconnected_callback=None, **_):
+        proxy = hooks["preferred"]()  # what the affinity hook would be told to prefer for this attempt
+        chosen.append(proxy)
+        if proxy:
+            hooks["on_choice"](proxy, True)
+        if len(chosen) == 1:
+            await asyncio.sleep(3600)
+        return light.new_client(disconnected_callback)
+
+    with (
+        patch("custom_components.pawfly.link.make_affinity_client_class", side_effect=factory),
+        patch("custom_components.pawfly.link.establish_connection", side_effect=connect),
+    ):
+        entry = await setup_entry(options={CONF_PREFERRED_PROXY: PROXY_ADAPTER})
+        await wait_until(lambda: entry.runtime_data.link.ready, message="the second attempt to connect")
+        assert chosen == [PROXY_ADAPTER, None]  # the proxy that hung is skipped once ...
+
+        light.drop_link()
+        await wait_until(lambda: len(chosen) == 3, message="the reconnect after the drop")
+        assert chosen[2] == PROXY_ADAPTER  # ... and preferred again afterwards
+
+
+async def test_entities_fill_in_when_the_first_status_arrives_after_setup_and_nothing_is_actuated(
+    hass, light, setup_entry, monkeypatch
+):
+    monkeypatch.setattr(coordinator_module, "FIRST_SESSION_TIMEOUT", 0.3)
+    light.visible = False  # no proxy hears it yet, as in the first seconds after a restart
+    entry = await setup_entry()
+    assert entry.state is ConfigEntryState.LOADED
+    for entity in (LIGHT, SELECT):
+        assert hass.states.get(entity).state == STATE_UNAVAILABLE  # nothing fabricated while there is no data
+    assert light.events == []
+
+    light.visible = True
+    light.fire_advertisement()
+    await wait_until(lambda: hass.states.get(LIGHT).state == "on", message="the light to appear")
+    assert hass.states.get(LIGHT).attributes["brightness"] == 230
+    assert hass.states.get(SELECT).state != STATE_UNAVAILABLE
+    await settle()
+    assert names(light.events) == SESSION  # key check, clock, status query: no power/brightness/colour command
+
+
+async def test_a_wrong_password_found_after_the_setup_budget_still_starts_reauth(hass, light, setup_entry, monkeypatch):
+    monkeypatch.setattr(coordinator_module, "FIRST_SESSION_TIMEOUT", 0.2)
+    light.connect_delay = 0.6  # the refusal arrives only after setup has returned
+    entry = await setup_entry(password="87654321")
+    assert entry.state is ConfigEntryState.LOADED
+    await wait_until(
+        lambda: [f["context"]["source"] for f in hass.config_entries.flow.async_progress_by_handler(DOMAIN)]
+        == ["reauth"],
+        message="the reauth flow",
+    )
+    assert hass.states.get(LIGHT).state == STATE_UNAVAILABLE
+
+
+@pytest.mark.parametrize("how", ["latch_only", "shutdown_stage"])
+async def test_setup_that_ends_while_home_assistant_shuts_down_stops_its_link_and_reports_no_outage(
+    hass, light, make_entry, monkeypatch, how
+):
+    """The latch alone (a resume racing the stage) is rechecked after setup's wait; the real stage also
+    runs the entry's own job. Either way no link is left and no repair timer is armed after the latch."""
+    monkeypatch.setattr(coordinator_module, "FIRST_SESSION_TIMEOUT", 0.6)
+    light.visible = False
     entry = make_entry()
-    async with asyncio.timeout(coordinator_module.FIRST_SESSION_TIMEOUT + 2.0):
-        await hass.config_entries.async_setup(entry.entry_id)
+    setup = asyncio.create_task(hass.config_entries.async_setup(entry.entry_id))
+    await wait_until(lambda: len(link_tasks()) == 1, message="setup to start the link")
+    if how == "latch_only":
+        shutdown_module.begin(hass)  # the shutdown stage begins while setup is still waiting
+    else:
+        await run_shutdown_stage(hass)
+    await setup
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.SETUP_RETRY
-    assert light.disconnections >= 1 and not light.connected
-    assert link_tasks() == []
+    assert link_tasks() == [] and light.connections == 0
+    assert issue(hass) is None
+    if how == "shutdown_stage":
+        assert all(outage.unsub is None for outage in outages(hass).values())
 
 
 # -- first setup outcomes --------------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("problem", ["invisible", "refusing"])
-async def test_an_unreachable_light_ends_setup_in_retry(hass, light, make_entry, monkeypatch, problem):
+async def test_an_unreachable_light_does_not_fail_setup(hass, light, setup_entry, monkeypatch, problem):
     monkeypatch.setattr(coordinator_module, "FIRST_SESSION_TIMEOUT", 0.3)
     if problem == "invisible":
         light.visible = False
     else:
         light.connect_error = BleakError("connection refused")
-    entry = make_entry()
-    await hass.config_entries.async_setup(entry.entry_id)
-    await hass.async_block_till_done()
-    assert entry.state is ConfigEntryState.SETUP_RETRY
-    assert light.connections == 0 and link_tasks() == []
+    entry = await setup_entry()
+    assert entry.state is ConfigEntryState.LOADED
+    assert hass.states.get(LIGHT).state == STATE_UNAVAILABLE and hass.states.get(CONNECTED).state == "off"
+    assert light.connections == 0 and len(link_tasks()) == 1
+    assert list(outages(hass)) == [light.address]  # the outage clock runs from the first failure
 
 
 async def test_a_wrong_key_fails_setup_and_starts_reauth(hass, light, make_entry):
@@ -447,7 +559,7 @@ def outage_clock(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
 
 @pytest.fixture
 def setup_attempts(monkeypatch: pytest.MonkeyPatch) -> list[str]:
-    """One item per setup attempt: every retry and every reload builds a new coordinator."""
+    """One item per setup attempt: every reload builds a new coordinator."""
     attempts: list[str] = []
     real_start = coordinator_module.PawflyCoordinator.async_start
 
@@ -460,18 +572,24 @@ def setup_attempts(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 
 async def elapse(hass: HomeAssistant, clock: SimpleNamespace, seconds: float) -> None:
-    """Let time pass for the outage clock and for Home Assistant's timers (setup retries, the deadline)."""
+    """Let time pass for the outage clock and for Home Assistant's timers (the outage deadline)."""
     clock.advance(seconds)
     await fire(hass, clock.elapsed)
 
 
 @pytest.fixture
-def setup_unreachable(hass, light, make_entry, monkeypatch, outage_clock, setup_attempts):
-    """Factory: set an entry up while its light is out of reach (SETUP_RETRY at T0, outage clock running)."""
+async def setup_unreachable(hass, light, make_entry, monkeypatch, outage_clock, setup_attempts):
+    """Factory: set an entry up while its light is out of reach (LOADED at T0, outage clock running)."""
     monkeypatch.setattr(coordinator_module, "FIRST_SESSION_TIMEOUT", 0.3)
+    created: list[MockConfigEntry] = []
 
-    async def _setup(*, heard: bool = False, proxy: str | None = None) -> MockConfigEntry:
-        if heard:
+    async def _setup(*, heard: bool = False, proxy: str | None = None, hung: bool = False) -> MockConfigEntry:
+        if hung:
+            # No attempt ever ends, so no link event can report anything: only timers are left.
+            light.connect_delay = 7200
+            monkeypatch.setattr(link_module, "CONNECT_DEADLINE", 36000.0)
+            monkeypatch.setattr(link_module, "STOP_GRACE", 0.1)
+        elif heard:
             light.connect_error = BleakError("connection refused")  # advertising, but it will not connect
         else:
             light.visible = False
@@ -479,26 +597,30 @@ def setup_unreachable(hass, light, make_entry, monkeypatch, outage_clock, setup_
         if proxy:
             data[CONF_LAST_HOLDING_PROXY] = proxy
         entry = make_entry(data=data)
+        created.append(entry)
         await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
-        assert entry.state is ConfigEntryState.SETUP_RETRY
+        assert entry.state is ConfigEntryState.LOADED  # a light that is down never fails setup
         return entry
 
-    return _setup
+    yield _setup
+    for entry in created:
+        if entry.state is ConfigEntryState.LOADED:
+            await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
 
 
 @pytest.mark.parametrize(
     ("heard", "proxy"), [(False, None), (True, PROXY_ADAPTER)], ids=["out_of_range", "heard_but_refusing"]
 )
-async def test_retries_never_restart_the_outage_clock_and_the_repair_comes_after_fifteen_minutes(
-    hass, light, setup_unreachable, outage_clock, setup_attempts, heard, proxy
+async def test_failed_attempts_never_restart_the_outage_clock_and_the_repair_comes_after_fifteen_minutes(
+    hass, light, setup_unreachable, outage_clock, heard, proxy
 ):
     await setup_unreachable(heard=heard, proxy=proxy)
     assert list(outages(hass)) == [light.address]
     assert outage_module.outage_seconds(hass, light.address) == 0
 
-    await elapse(hass, outage_clock, 300)  # the retry five minutes in finds the light still down
-    assert len(setup_attempts) == 2
+    await elapse(hass, outage_clock, 300)  # attempts have kept failing meanwhile
     assert outage_module.outage_seconds(hass, light.address) == 300
     assert issue(hass) is None
 
@@ -517,13 +639,12 @@ async def test_a_manual_reload_mid_outage_does_not_restart_the_clock(
     entry = await setup_unreachable()
     outage_clock.advance(300)
     await hass.config_entries.async_reload(entry.entry_id)
-    assert entry.state is ConfigEntryState.SETUP_RETRY and len(setup_attempts) == 2
+    assert entry.state is ConfigEntryState.LOADED and len(setup_attempts) == 2
     assert outage_module.outage_seconds(hass, light.address) == 300
 
 
 async def test_the_deadline_timer_alone_raises_the_repair(hass, setup_unreachable, outage_clock):
-    entry = await setup_unreachable()
-    entry.async_cancel_retry_setup()  # no setup retry can report the outage: only the deadline timer is left
+    await setup_unreachable(hung=True)  # the link says nothing at all: only the deadline timer can report
     await elapse(hass, outage_clock, 900)
     assert issue(hass) is not None
 
@@ -533,11 +654,9 @@ async def test_recovery_clears_the_clock_and_deletes_the_repair(hass, light, set
     await elapse(hass, outage_clock, 900)
     assert issue(hass) is not None
 
-    light.visible = True
-    await elapse(hass, outage_clock, 1)  # the next setup retry finds the light
-    assert entry.state is ConfigEntryState.LOADED
-    assert issue(hass) is None and outages(hass) == {}
-    assert await hass.config_entries.async_unload(entry.entry_id)
+    light.visible = True  # the link's next attempt finds the light
+    await wait_until(lambda: issue(hass) is None and outages(hass) == {}, message="the outage to be over")
+    assert entry.state is ConfigEntryState.LOADED and hass.states.get(LIGHT).state == "on"
 
 
 @pytest.mark.parametrize("seconds", [300, 900], ids=["before_the_repair", "after_the_repair"])
@@ -923,11 +1042,15 @@ async def test_the_shutdown_job_is_not_an_outage_and_raises_no_repair(hass, conf
     assert issue(hass) is None
 
 
-async def test_releasing_a_light_that_is_not_connected_is_harmless(hass, setup_unreachable):
+async def test_releasing_a_light_that_is_still_connecting_stops_its_link_and_schedules_the_resume(
+    hass, light, setup_unreachable
+):
     entry = await setup_unreachable()
-    await release(hass)  # nothing is held, so nothing is unloaded and nothing is scheduled
-    assert entry.state is ConfigEntryState.SETUP_RETRY
-    assert hass.data[DOMAIN].get("resume", {}) == {}
+    assert len(link_tasks()) == 1
+    await release(hass)  # it is still dialling: that is a link too, and it is let go
+    assert entry.state is ConfigEntryState.NOT_LOADED and link_tasks() == []
+    assert outages(hass) == {}  # handed over on purpose, not an outage
+    assert list(hass.data[DOMAIN]["resume"]) == [entry.entry_id]
 
 
 # -- an unloaded entry is not an outage ------------------------------------------------------------------
@@ -948,7 +1071,7 @@ async def test_an_entry_unloaded_mid_outage_is_not_reported_but_keeps_the_clock_
 
     await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
-    assert entry.state is ConfigEntryState.SETUP_RETRY
+    assert entry.state is ConfigEntryState.LOADED
     assert issue(hass) is not None
 
 

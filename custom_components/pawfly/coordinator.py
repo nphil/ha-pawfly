@@ -7,8 +7,8 @@ the light what it actually did. The scheduled poll is only a heartbeat for the c
 nothing was heard for a while.
 
 Two process-level pieces deliberately live outside this object because a coordinator is
-rebuilt on every reload and every ``ConfigEntryNotReady`` retry: the outage clock and its
-repair (``outage.py``) and the link supervisor's own timers (owned by the link).
+rebuilt on every reload: the outage clock and its repair (``outage.py``) and the link
+supervisor's own timers (owned by the link).
 """
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ from homeassistant.helpers.event import async_call_later, async_track_time_chang
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
-from . import outage, protocol
+from . import outage, protocol, shutdown
 from .const import (
     CONF_KEEP_CONNECTED,
     CONF_LAST_HOLDING_PROXY,
@@ -68,8 +68,11 @@ type PawflyConfigEntry = ConfigEntry[PawflyCoordinator]
 
 #: Wait after the last command before asking the light for its status.
 STATUS_DEBOUNCE = 0.2
-#: How long setup waits for the first session before raising ``ConfigEntryNotReady``.
-FIRST_SESSION_TIMEOUT = 20.0
+#: How long setup waits for the first session. Home Assistant's startup is held up by every
+#: integration's setup, so this is the whole radio budget (5 s for setup, platforms included): a
+#: light that has not answered by then keeps connecting in the background, its entities unavailable
+#: until its first status arrives.
+FIRST_SESSION_TIMEOUT = 4.0
 #: How long the status query after a command may wait for the link.
 STATUS_LINK_TIMEOUT = 5.0
 #: How long a live preview call waits for the link (previews are best effort).
@@ -121,6 +124,7 @@ class PawflyCoordinator(DataUpdateCoordinator[protocol.Status | None]):
             on_event=self._on_link_event,
             on_route=self._on_route,
             on_password=self._store_password,
+            create_task=lambda coro, name: entry.async_create_background_task(hass, coro, name),
         )
         self._status_debouncer: Debouncer[None] = Debouncer(
             hass,
@@ -170,37 +174,45 @@ class PawflyCoordinator(DataUpdateCoordinator[protocol.Status | None]):
     async def async_start(self) -> None:
         """Start the link and wait (bounded) for the first session.
 
-        Raises ``ConfigEntryAuthFailed`` when the light refuses the password and
-        ``ConfigEntryNotReady`` when it cannot be reached in time; in both cases the link is
-        stopped again before the exception propagates, and an unreachable light arms the
-        process-scoped outage clock.
+        Raises ``ConfigEntryAuthFailed`` only when the light definitively refuses the password
+        (the link is stopped again first). A light that is slow, out of range or behind a busy
+        proxy does NOT hold setup up and does not fail it: the link keeps connecting in its own
+        background task, the outage clock starts, and the entities stay unavailable until the
+        first status arrives. Raises ``ConfigEntryNotReady`` only when Home Assistant began
+        shutting down while waiting.
         """
         self.link.start()
         outcome = await self.link.async_wait_first_session(FIRST_SESSION_TIMEOUT)
-        if outcome == "ready":
-            self._unsub_time_sync = async_track_time_change(
-                self.hass,
-                self._async_daily_time_sync,
-                hour=TIME_SYNC_HOUR,
-                minute=TIME_SYNC_MINUTE,
-                second=0,
+        if shutdown.in_progress(self.hass):
+            await self.async_shutdown()
+            raise ConfigEntryNotReady(
+                translation_domain=DOMAIN,
+                translation_key="not_ready",
+                translation_placeholders={"name": self.config_entry.title, "error": "Home Assistant is shutting down"},
             )
-            self._setup_complete = True
-            return
-        error = self.link.last_error or "no answer"
-        await self.async_shutdown()
         if outcome == "auth_failed":
+            await self.async_shutdown()
             raise ConfigEntryAuthFailed(
                 translation_domain=DOMAIN,
                 translation_key="auth_failed",
                 translation_placeholders={"name": self.config_entry.title},
             )
-        outage.async_link_lost(self.hass, self.config_entry)
-        raise ConfigEntryNotReady(
-            translation_domain=DOMAIN,
-            translation_key="not_ready",
-            translation_placeholders={"name": self.config_entry.title, "error": error},
+        self._unsub_time_sync = async_track_time_change(
+            self.hass,
+            self._async_daily_time_sync,
+            hour=TIME_SYNC_HOUR,
+            minute=TIME_SYNC_MINUTE,
+            second=0,
         )
+        self._setup_complete = True
+        if outcome != "ready":
+            _LOGGER.info(
+                "%s did not answer within %.0f s of setup; connecting in the background (%s)",
+                self.config_entry.title,
+                FIRST_SESSION_TIMEOUT,
+                self.link.last_error or "no answer yet",
+            )
+            outage.async_link_lost(self.hass, self.config_entry)
 
     async def async_shutdown(self) -> None:
         """Release the light and stop everything; bounded and idempotent.

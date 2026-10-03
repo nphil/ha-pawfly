@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import deque
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Coroutine
 import contextlib
 from datetime import datetime
 from enum import StrEnum
@@ -59,7 +59,10 @@ from .ble_affinity import make_affinity_client_class
 _LOGGER = logging.getLogger(__name__)
 
 # --- deadlines: every GATT-facing await is bounded -------------------------------------
-CONNECT_DEADLINE = 30.0
+#: One connect (``establish_connection`` with its retries) may not hang longer than this. A first
+#: link through a busy proxy that has not come up in 10 s is abandoned and retried (on another
+#: proxy when the preferred one is the one that hung), never waited for.
+CONNECT_DEADLINE = 10.0
 CONNECT_RETRIES = 3
 GATT_OP_DEADLINE = 10.0
 STOP_NOTIFY_DEADLINE = 2.0
@@ -230,6 +233,7 @@ class PawflyLink:
         on_route: Callable[[str | None, str | None], None] | None = None,
         on_password: Callable[[str], None] | None = None,
         clock: Callable[[], datetime] = dt_util.now,
+        create_task: Callable[[Coroutine[Any, Any, None], str], asyncio.Task[None]] | None = None,
     ) -> None:
         self.hass = hass
         self.address = address.upper()
@@ -248,6 +252,7 @@ class PawflyLink:
         self._on_route = on_route
         self._on_password = on_password
         self._clock = clock
+        self._create_task = create_task or hass.async_create_background_task
 
         self._client: BleakClient | None = None
         self._client_class: type | None = None
@@ -294,6 +299,9 @@ class PawflyLink:
         self.route_source: str | None = None
         self.route_adapter: str | None = None
         self.via_preferred_proxy: bool | None = None
+        # A connect or GATT step on the preferred proxy hung: the next connect skips the preference once.
+        self._hung_on_preferred = False
+        self._avoid_preferred = False
         self.last_notification: str | None = None
         self.last_notification_at: datetime | None = None
         self._drops: deque[float] = deque()
@@ -380,9 +388,7 @@ class PawflyLink:
             {"address": self.address, "connectable": True},
             bluetooth.BluetoothScanningMode.PASSIVE,
         )
-        self._task = self.hass.async_create_background_task(
-            self._supervise(), f"pawfly link {self.address}"
-        )
+        self._task = self._create_task(self._supervise(), f"pawfly link {self.address}")
 
     def latch(self) -> None:
         """Never open another connection from now on (the process is shutting down).
@@ -765,7 +771,7 @@ class PawflyLink:
         if self._client_class is None:
             self._client_class = make_affinity_client_class(
                 bleak_retry_connector.BleakClientWithServiceCache,
-                lambda: self._preferred_proxy() or None,
+                lambda: None if self._avoid_preferred else (self._preferred_proxy() or None),
                 on_choice=self._on_route_choice,
             )
         return self._client_class
@@ -774,16 +780,26 @@ class PawflyLink:
     def _on_route_choice(self, _scanner_name: str, preferred_used: bool) -> None:
         self.via_preferred_proxy = preferred_used
 
+    def _note_hung_step(self) -> None:
+        """A step ran into its deadline: if the preferred proxy carried it, the next connect avoids it once."""
+        if self.via_preferred_proxy:
+            self._hung_on_preferred = True
+
     async def _connect(self, device: BLEDevice) -> BleakClient:
-        async with asyncio.timeout(CONNECT_DEADLINE):
-            client = await establish_connection(
-                self._client_class_for_connect(),
-                device,
-                self.name,
-                disconnected_callback=self._on_disconnected,
-                max_attempts=CONNECT_RETRIES,
-                ble_device_callback=self._current_device_or_raise,
-            )
+        self._avoid_preferred, self._hung_on_preferred = self._hung_on_preferred, False
+        try:
+            async with asyncio.timeout(CONNECT_DEADLINE):
+                client = await establish_connection(
+                    self._client_class_for_connect(),
+                    device,
+                    self.name,
+                    disconnected_callback=self._on_disconnected,
+                    max_attempts=CONNECT_RETRIES,
+                    ble_device_callback=self._current_device_or_raise,
+                )
+        except TimeoutError:
+            self._note_hung_step()
+            raise
         self._last_device = device
         if self._stopping or self._latched:
             await self._teardown(client)
@@ -919,6 +935,7 @@ class PawflyLink:
                 return await awaitable
         except TimeoutError:
             self.last_error = f"{what} timed out after {timeout:g}s"
+            self._note_hung_step()
             self.request_drop(self.last_error)
             raise CommandFailed(self.last_error) from None
 

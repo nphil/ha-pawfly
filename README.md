@@ -120,6 +120,10 @@ If the light is unreachable for 15 minutes a **repair** appears (with the proxy 
 and clears itself when the light is back. A password the light stops accepting starts the normal
 re-authentication flow.
 
+Starting Home Assistant never waits for the light: setup gives it about 4 seconds, and a light that
+has not answered by then keeps connecting in the background while its entities show as unavailable
+(they fill in as soon as its first status arrives; nothing is sent to the light when they do).
+
 ## For dashboard cards
 
 The Lovelace card is a **separate HACS plugin** (one card for the Pawfly and the Fluval lights); this

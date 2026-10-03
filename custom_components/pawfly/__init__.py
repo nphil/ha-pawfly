@@ -1,10 +1,11 @@
 """Pawfly Aquarium Light: local Bluetooth control of a Pawfly / PinYing PY4C WRGB light.
 
 Component-level setup (the actions) happens once in ``async_setup``;
-``async_setup_entry`` starts one persistent link per configured light and waits (bounded)
-for its first session, so a wrong password surfaces as reauth and an unreachable light as
-``ConfigEntryNotReady`` (Home Assistant retries; the outage clock and repair live outside the
-entry, see ``outage.py``).
+``async_setup_entry`` starts one persistent link per configured light and waits at most
+``FIRST_SESSION_TIMEOUT`` for its first session: a wrong password surfaces as reauth, while a
+light that is slow or absent never holds Home Assistant's startup up (the link keeps
+connecting in the background, entities unavailable until the first status; the outage clock
+and repair live outside the entry, see ``outage.py``).
 
 Home Assistant does not unload entries when it shuts down, so each light registers one shutdown
 job that releases its link (see ``async_setup_entry``).
@@ -64,7 +65,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: PawflyConfigEntry) -> bool:
-    """Connect to the light, then set up its entities."""
+    """Start the light's link, wait a few seconds for its first session, then set up its entities."""
     if shutdown.in_progress(hass):
         raise ConfigEntryNotReady("Home Assistant is shutting down")
     # However this setup came about (the resume timer itself, a reload, the user), a resume that an
@@ -98,7 +99,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: PawflyConfigEntry) -> bo
     entry.async_on_unload(
         hass.async_add_shutdown_job(HassJob(_async_release_at_shutdown, f"pawfly release BLE link {entry.title}"))
     )
-    # Raises ConfigEntryAuthFailed / ConfigEntryNotReady, after stopping the link again.
+    # Raises ConfigEntryAuthFailed (password refused) after stopping the link, or ConfigEntryNotReady
+    # when shutdown began meanwhile; an unanswered light returns normally after the bounded wait.
     await coordinator.async_start()
     entry.runtime_data = coordinator
     try:

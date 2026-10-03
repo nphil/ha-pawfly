@@ -2,15 +2,15 @@
 
 How long a light has been unreachable is kept per BLE address in ``hass.data[DOMAIN]``,
 never on the coordinator (or the config entry runtime): a coordinator is rebuilt on every
-reload and on every ``ConfigEntryNotReady`` retry, so a clock owned by it restarts from zero
-exactly when an outage is long and the entry keeps being rebuilt (the failure the house BLE
-skill describes). The clock is armed when the link is lost or setup raises
-``ConfigEntryNotReady`` and is cleared only by a genuine recovery (a session was established:
-key accepted, status read) or by removing the entry. Advertisements alone never clear it.
+reload, so a clock owned by it would restart from zero exactly when an outage is long (the
+failure the house BLE skill describes). The clock is armed when the link is lost or setup
+finished without a session (the light keeps connecting in the background) and is cleared only
+by a genuine recovery (a session was established: key accepted, status read) or by removing
+the entry. Advertisements alone never clear it.
 
 The repair is reconciled against the actual issue registry and the live state of the entry
-on every step, so it converges after a reload instead of relying on remembered state. An
-entry that is in ``SETUP_RETRY`` (no coordinator, no link) counts as unreachable.
+on every step, so it converges after a reload instead of relying on remembered state. A loaded
+entry whose link is not up, and one waiting in ``SETUP_RETRY``, count as unreachable.
 """
 
 from __future__ import annotations
