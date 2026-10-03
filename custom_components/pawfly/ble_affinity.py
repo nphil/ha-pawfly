@@ -47,6 +47,13 @@ Private-API note: the overridden method and `_async_get_backend_for_ble_device`
 are habluetooth internals (present in 6.26.x). `affinity_supported()` checks
 for them; when absent the factory returns `base` unchanged and logs once, so
 an upgrade degrades to default routing rather than breaking connections.
+
+Leaving a path out for one attempt
+----------------------------------
+A proxy whose connect or subscribe just hung must not be picked again by the very next retry, and
+habluetooth cannot say so (a connect that succeeded before the hang resets that proxy's failure score).
+``excluded_getter`` names such a scanner; its paths are filtered out of the list the selector sees, so no
+connection slot is ever reserved on it, provided another connectable path exists.
 """
 
 from __future__ import annotations
@@ -54,6 +61,8 @@ from __future__ import annotations
 from collections.abc import Callable
 import logging
 from typing import Any
+
+from bleak.exc import BleakError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -98,19 +107,50 @@ def _client_address(client: Any) -> str:
     return str(getattr(client, "address", ""))
 
 
+class _FilteredManager:
+    """The Bluetooth manager as seen by one selection, with some connection paths left out.
+
+    habluetooth's selector asks the manager for the paths to an address and reserves a connection slot
+    only for the one it returns, so filtering the list here keeps an excluded scanner out of the choice
+    BEFORE any slot is reserved (nothing to release afterwards). Every other manager call is delegated.
+    """
+
+    __slots__ = ("_address", "_devices", "_manager")
+
+    def __init__(self, manager: Any, address: str, devices: list[Any]) -> None:
+        self._manager = manager
+        self._address = address.upper()
+        self._devices = devices
+
+    def async_scanner_devices_by_address(self, address: str, connectable: bool) -> Any:
+        if address.upper() == self._address:
+            return self._devices
+        return self._manager.async_scanner_devices_by_address(address, connectable)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._manager, name)
+
+
 def make_affinity_client_class(
     base: type,
     preferred_getter: Callable[[], str | None],
     *,
     max_failures: int = DEFAULT_MAX_FAILURES,
     on_choice: Callable[[str, bool], None] | None = None,
+    excluded_getter: Callable[[], str | None] | None = None,
 ) -> type:
-    """Return ``base`` specialised to prefer one scanner.
+    """Return ``base`` specialised to prefer one scanner and to leave one out for an attempt.
 
     ``preferred_getter`` is called at each connect so an options change
     takes effect on the next reconnect without rebuilding the client.
     ``on_choice(scanner_name, preferred_used)`` is invoked after every
     selection so the caller can surface which path was taken.
+    ``excluded_getter`` names a scanner (node name, source or scanner name)
+    that must not be chosen for this attempt, for example the proxy whose
+    connect or subscribe just hung. It is honoured only while another
+    connectable path to the device exists and can take the connection:
+    otherwise the unfiltered selection runs, so an exclusion can never turn
+    a reachable device into an unreachable one.
     """
     global _warned_unsupported
     if not affinity_supported(base):
@@ -126,10 +166,13 @@ def make_affinity_client_class(
 
     default_select = getattr(base, _SELECT)
 
-    def _select(self: Any, manager: Any) -> Any:
+    def _choose(self: Any, manager: Any) -> Any:
         preferred = preferred_getter()
         if not preferred:
-            return default_select(self, manager)
+            backend = default_select(self, manager)
+            if on_choice is not None:
+                on_choice(getattr(backend.scanner, "name", "?"), False)
+            return backend
 
         address = _client_address(self)
         for scanner_device in manager.async_scanner_devices_by_address(address, True):
@@ -181,6 +224,35 @@ def make_affinity_client_class(
         if on_choice is not None:
             on_choice(getattr(backend.scanner, "name", "?"), False)
         return backend
+
+    def _select(self: Any, manager: Any) -> Any:
+        excluded = excluded_getter() if excluded_getter is not None else None
+        if excluded:
+            address = _client_address(self)
+            devices = list(manager.async_scanner_devices_by_address(address, True))
+            others = [
+                device for device in devices if not scanner_matches(device.scanner, excluded)
+            ]
+            if others and len(others) < len(devices):
+                try:
+                    backend = _choose(self, _FilteredManager(manager, address, others))
+                except BleakError:
+                    # The other paths cannot take the connection right now (no free slot): a failed
+                    # selection reserved nothing, so fall through to the unfiltered one.
+                    _LOGGER.debug(
+                        "%s: no other path than %s can connect; not excluding it",
+                        address,
+                        excluded,
+                    )
+                else:
+                    _LOGGER.info(
+                        "%s: leaving out %s for this attempt, connecting via %s",
+                        address,
+                        excluded,
+                        getattr(backend.scanner, "name", "?"),
+                    )
+                    return backend
+        return _choose(self, manager)
 
     return type(
         f"Affinity{base.__name__}",

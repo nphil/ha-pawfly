@@ -99,6 +99,8 @@ def async_link_lost(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """
     if shutdown.in_progress(hass):
         return
+    if _auth_rejected(entry):
+        return
     address = str(entry.data[CONF_ADDRESS]).upper()
     outages = _outages(hass)
     outage = outages.get(address)
@@ -115,6 +117,24 @@ def async_link_recovered(hass: HomeAssistant, address: str) -> None:
     if shutdown.in_progress(hass):
         return
     _clear(hass, address.upper())
+
+
+@callback
+def async_auth_rejected(hass: HomeAssistant, address: str) -> None:
+    """The light refused the password: it is reachable, so whatever outage was counted is over.
+
+    Clears the clock, its timer and the repair; the reauth flow is what asks the user to act. No outage
+    is started again while the link stays rejected.
+    """
+    if shutdown.in_progress(hass):
+        return
+    _clear(hass, address.upper())
+
+
+def _auth_rejected(entry: ConfigEntry) -> bool:
+    """Whether the entry's link currently has its password refused (live state)."""
+    coordinator: Any = getattr(entry, "runtime_data", None)
+    return bool(getattr(getattr(coordinator, "link", None), "auth_failed", False))
 
 
 @callback
@@ -146,7 +166,7 @@ def _reconcile(hass: HomeAssistant, address: str) -> None:
     if outage is None:
         return
     entry = hass.config_entries.async_get_entry(outage.entry_id)
-    if entry is None or entry.disabled_by is not None or _link_healthy(entry):
+    if entry is None or entry.disabled_by is not None or _link_healthy(entry) or _auth_rejected(entry):
         _clear(hass, address)
         return
     if entry.state not in _OUTAGE_STATES:

@@ -212,7 +212,8 @@ class PawflyCoordinator(DataUpdateCoordinator[protocol.Status | None]):
                 FIRST_SESSION_TIMEOUT,
                 self.link.last_error or "no answer yet",
             )
-            outage.async_link_lost(self.hass, self.config_entry)
+            if not self.link.auth_failed:
+                outage.async_link_lost(self.hass, self.config_entry)
 
     async def async_shutdown(self) -> None:
         """Release the light and stop everything; bounded and idempotent.
@@ -279,6 +280,9 @@ class PawflyCoordinator(DataUpdateCoordinator[protocol.Status | None]):
         elif event in (LinkEvent.DROPPED, LinkEvent.FAILED):
             outage.async_link_lost(self.hass, self.config_entry)
         elif event is LinkEvent.AUTH_FAILED:
+            # The light answered and refused the key: it is reachable, so it is not an "unreachable" outage
+            # (the reauth flow is the repair for this). Drop the clock, timer and repair.
+            outage.async_auth_rejected(self.hass, self.address)
             self._store_password(None)  # neither the saved nor a pending key opens the light
             if self._setup_complete:
                 self.config_entry.async_start_reauth(self.hass)

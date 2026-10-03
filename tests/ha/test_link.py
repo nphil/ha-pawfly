@@ -422,37 +422,117 @@ async def test_setup_returns_within_its_budget_when_the_connect_hangs_forever_an
     await wait_until(lambda: hass.states.get(LIGHT).state == "on", message="the next attempt to connect")
 
 
-async def test_a_connect_that_hangs_on_the_preferred_proxy_is_retried_without_the_preference(
+class RouteSpy:
+    """Stands in for the affinity factory and the connect: two proxies, one hangs or fails as scripted.
+
+    Every attempt picks the preferred proxy unless the link asks for it to be left out, and reports its
+    pick through ``on_choice`` the way ``ble_affinity`` does.
+    """
+
+    def __init__(self, light: FakePawflyLight, *, preferred: str = "proxy-a", other: str = "proxy-b") -> None:
+        self.light, self.preferred, self.other = light, preferred, other
+        self.hooks: dict = {}
+        self.excluded: list[str | None] = []  # what the link asked to leave out, per attempt
+        self.picked: list[str] = []
+        self.hang_first_connect = False
+
+    def factory(self, base, preferred, *, on_choice=None, excluded_getter=None, **_):
+        self.hooks.update(on_choice=on_choice, excluded=excluded_getter)
+        return base
+
+    async def connect(self, client_class, device, name, disconnected_callback=None, **_):
+        excluded = self.hooks["excluded"]()
+        self.excluded.append(excluded)
+        pick = self.other if excluded == self.preferred else self.preferred
+        self.picked.append(pick)
+        self.hooks["on_choice"](pick, pick == self.preferred)
+        if self.hang_first_connect and len(self.picked) == 1:
+            await asyncio.sleep(3600)
+        return self.light.new_client(disconnected_callback)
+
+    def patches(self):
+        return (
+            patch("custom_components.pawfly.link.make_affinity_client_class", side_effect=self.factory),
+            patch("custom_components.pawfly.link.establish_connection", side_effect=self.connect),
+        )
+
+
+async def test_a_connect_that_hangs_on_a_proxy_leaves_it_out_of_the_next_attempt_only(
     hass, light, setup_entry, monkeypatch
 ):
     monkeypatch.setattr(link_module, "CONNECT_DEADLINE", 0.2)
-    chosen: list[str | None] = []
-    hooks: dict = {}
-
-    def factory(base, preferred, *, on_choice=None, **_):
-        hooks.update(preferred=preferred, on_choice=on_choice)
-        return base
-
-    async def connect(client_class, device, name, disconnected_callback=None, **_):
-        proxy = hooks["preferred"]()  # what the affinity hook would be told to prefer for this attempt
-        chosen.append(proxy)
-        if proxy:
-            hooks["on_choice"](proxy, True)
-        if len(chosen) == 1:
-            await asyncio.sleep(3600)
-        return light.new_client(disconnected_callback)
-
-    with (
-        patch("custom_components.pawfly.link.make_affinity_client_class", side_effect=factory),
-        patch("custom_components.pawfly.link.establish_connection", side_effect=connect),
-    ):
-        entry = await setup_entry(options={CONF_PREFERRED_PROXY: PROXY_ADAPTER})
+    spy = RouteSpy(light)
+    spy.hang_first_connect = True
+    first, second = spy.patches()
+    with first, second:
+        entry = await setup_entry(options={CONF_PREFERRED_PROXY: "proxy-a"})
         await wait_until(lambda: entry.runtime_data.link.ready, message="the second attempt to connect")
-        assert chosen == [PROXY_ADAPTER, None]  # the proxy that hung is skipped once ...
+        assert spy.excluded == [None, "proxy-a"]  # the proxy that hung is left out once ...
+        assert spy.picked == ["proxy-a", "proxy-b"]  # ... and the other one carried the link
 
         light.drop_link()
-        await wait_until(lambda: len(chosen) == 3, message="the reconnect after the drop")
-        assert chosen[2] == PROXY_ADAPTER  # ... and preferred again afterwards
+        await wait_until(lambda: len(spy.picked) == 3, message="the reconnect after the drop")
+        assert (spy.excluded[2], spy.picked[2]) == (None, "proxy-a")  # a good link is not punished for it
+
+
+@pytest.mark.parametrize("failure", ["hangs", "backend_error"])
+async def test_a_subscribe_that_fails_on_a_proxy_leaves_it_out_of_the_next_attempt(
+    hass, light, setup_entry, monkeypatch, failure
+):
+    monkeypatch.setattr(link_module, "GATT_OP_DEADLINE", 0.2)
+    real = FakeGattClient.start_notify
+    calls: list[int] = []
+
+    async def start_notify(self, char, callback, **kwargs):
+        calls.append(1)
+        if len(calls) == 1:
+            if failure == "hangs":
+                await asyncio.sleep(3600)  # the proxy never acknowledges the subscribe
+            raise BleakError("subscribe timed out")  # the backend's own timeout fired first
+        await real(self, char, callback, **kwargs)
+
+    monkeypatch.setattr(FakeGattClient, "start_notify", start_notify)
+    spy = RouteSpy(light)
+    first, second = spy.patches()
+    with first, second:
+        entry = await setup_entry()
+        await wait_until(lambda: entry.runtime_data.link.ready, message="the link on the other proxy")
+        assert spy.excluded == [None, "proxy-a"] and spy.picked == ["proxy-a", "proxy-b"]
+
+
+async def test_every_subscribe_asks_the_backend_for_a_timeout_below_the_outer_guard(hass, light, config_entry):
+    """The backend's own timeout must fire first: only its error path unregisters the notification handler,
+    cancelling the call from outside leaves it registered on an ESPHome proxy."""
+    assert light.notify_timeouts == [link_module.NOTIFY_BACKEND_TIMEOUT]
+    assert link_module.NOTIFY_BACKEND_TIMEOUT < link_module.GATT_OP_DEADLINE
+
+    await link_module.async_check_password(hass, light.address, DEFAULT_KEY)  # the config flow's check
+    assert light.notify_timeouts == [link_module.NOTIFY_BACKEND_TIMEOUT] * 2
+
+
+async def test_cancelling_the_supervisor_during_teardown_still_finishes_the_disconnect(
+    hass, config_entry, light, monkeypatch
+):
+    """The disconnect of a detached client runs shielded: cancelling its task cannot abandon an open link."""
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def slow_disconnect(self, **_):
+        started.set()
+        await release.wait()
+        light.events.append(("disconnect",))
+        light.drop_link(client=self)
+
+    monkeypatch.setattr(FakeGattClient, "disconnect", slow_disconnect)
+    light.clear()
+    link = config_entry.runtime_data.link
+    link.request_drop("test")
+    await asyncio.wait_for(started.wait(), 2)  # the supervisor is inside the teardown now
+    (task,) = link_tasks()
+    task.cancel()
+    await asyncio.sleep(0.05)
+    assert ("disconnect",) not in light.events  # still going: it is not tied to the cancelled task
+    release.set()
+    await wait_until(lambda: ("disconnect",) in light.events, message="the shielded disconnect to finish")
 
 
 async def test_entities_fill_in_when_the_first_status_arrives_after_setup_and_nothing_is_actuated(
@@ -475,17 +555,25 @@ async def test_entities_fill_in_when_the_first_status_arrives_after_setup_and_no
     assert names(light.events) == SESSION  # key check, clock, status query: no power/brightness/colour command
 
 
-async def test_a_wrong_password_found_after_the_setup_budget_still_starts_reauth(hass, light, setup_entry, monkeypatch):
+async def test_a_wrong_password_found_after_the_setup_budget_starts_reauth_and_is_never_an_outage(
+    hass, light, setup_entry, monkeypatch, outage_clock
+):
     monkeypatch.setattr(coordinator_module, "FIRST_SESSION_TIMEOUT", 0.2)
     light.connect_delay = 0.6  # the refusal arrives only after setup has returned
     entry = await setup_entry(password="87654321")
     assert entry.state is ConfigEntryState.LOADED
+    assert list(outages(hass)) == [light.address]  # setup ended without a session: the clock was started
     await wait_until(
         lambda: [f["context"]["source"] for f in hass.config_entries.flow.async_progress_by_handler(DOMAIN)]
         == ["reauth"],
         message="the reauth flow",
     )
     assert hass.states.get(LIGHT).state == STATE_UNAVAILABLE
+
+    # The light answered and refused the key: it is reachable, so reauth is the only repair.
+    assert outages(hass) == {}
+    await elapse(hass, outage_clock, 900)
+    assert issue(hass) is None and outages(hass) == {}
 
 
 @pytest.mark.parametrize("how", ["latch_only", "shutdown_stage"])

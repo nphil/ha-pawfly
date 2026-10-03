@@ -107,8 +107,9 @@ class FakeGattClient:
     def is_connected(self) -> bool:
         return self._light.connected and self._light.client is self
 
-    async def start_notify(self, char: Any, callback: Callable[[Any, bytearray], None], **_: Any) -> None:
+    async def start_notify(self, char: Any, callback: Callable[[Any, bytearray], None], **kwargs: Any) -> None:
         self._light.events.append(("start_notify",))
+        self._light.notify_timeouts.append(kwargs.get("timeout"))
         self._light.notify_callback = callback
 
     async def stop_notify(self, char: Any, **_: Any) -> None:
@@ -159,6 +160,7 @@ class FakePawflyLight:
         self.frames: list[bytes] = []
         self.frame_times: list[float] = []
         self.write_responses: list[bool | None] = []
+        self.notify_timeouts: list[float | None] = []  # the backend ``timeout`` each subscribe was given
         self.connections = 0
         self.disconnections = 0
         self.connected = False

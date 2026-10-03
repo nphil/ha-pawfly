@@ -65,6 +65,9 @@ _LOGGER = logging.getLogger(__name__)
 CONNECT_DEADLINE = 10.0
 CONNECT_RETRIES = 3
 GATT_OP_DEADLINE = 10.0
+#: Backend timeout of each proxy round trip of a subscribe, below ``GATT_OP_DEADLINE``: the backend's own
+#: error path (which unregisters its notification handler) runs before the outer guard could cancel it.
+NOTIFY_BACKEND_TIMEOUT = 4.0
 STOP_NOTIFY_DEADLINE = 2.0
 DISCONNECT_DEADLINE = 5.0
 KEY_REPLY_TIMEOUT = 3.0
@@ -299,9 +302,11 @@ class PawflyLink:
         self.route_source: str | None = None
         self.route_adapter: str | None = None
         self.via_preferred_proxy: bool | None = None
-        # A connect or GATT step on the preferred proxy hung: the next connect skips the preference once.
-        self._hung_on_preferred = False
-        self._avoid_preferred = False
+        # The route (scanner name) the last selection chose, one that hung and so is left out of the
+        # next connect once, and the one being left out right now.
+        self._chosen_scanner: str | None = None
+        self._hung_scanner: str | None = None
+        self._excluded_scanner: str | None = None
         self.last_notification: str | None = None
         self.last_notification_at: datetime | None = None
         self._drops: deque[float] = deque()
@@ -771,22 +776,25 @@ class PawflyLink:
         if self._client_class is None:
             self._client_class = make_affinity_client_class(
                 bleak_retry_connector.BleakClientWithServiceCache,
-                lambda: None if self._avoid_preferred else (self._preferred_proxy() or None),
+                lambda: self._preferred_proxy() or None,
                 on_choice=self._on_route_choice,
+                excluded_getter=lambda: self._excluded_scanner,
             )
         return self._client_class
 
     @callback
-    def _on_route_choice(self, _scanner_name: str, preferred_used: bool) -> None:
-        self.via_preferred_proxy = preferred_used
+    def _on_route_choice(self, scanner_name: str, preferred_used: bool) -> None:
+        self.via_preferred_proxy = preferred_used if self._preferred_proxy() else None
+        self._chosen_scanner = scanner_name
 
     def _note_hung_step(self) -> None:
-        """A step ran into its deadline: if the preferred proxy carried it, the next connect avoids it once."""
-        if self.via_preferred_proxy:
-            self._hung_on_preferred = True
+        """A connect or GATT step on the chosen route failed to finish: the next connect leaves it out once."""
+        self._hung_scanner = self._chosen_scanner
 
     async def _connect(self, device: BLEDevice) -> BleakClient:
-        self._avoid_preferred, self._hung_on_preferred = self._hung_on_preferred, False
+        # One attempt without the route that just hung (only used when another route exists).
+        self._excluded_scanner, self._hung_scanner = self._hung_scanner, None
+        self._chosen_scanner = None
         try:
             async with asyncio.timeout(CONNECT_DEADLINE):
                 client = await establish_connection(
@@ -800,6 +808,8 @@ class PawflyLink:
         except TimeoutError:
             self._note_hung_step()
             raise
+        finally:
+            self._excluded_scanner = None
         self._last_device = device
         if self._stopping or self._latched:
             await self._teardown(client)
@@ -837,7 +847,15 @@ class PawflyLink:
         self._write_response = needs_write_response(char)
 
     async def _teardown(self, client: BleakClient) -> None:
-        """Release the light: stop notifications, disconnect; bounded, never raises."""
+        """Release the light: stop notifications, disconnect; bounded, never raises.
+
+        Runs as its own shielded task: cancelling the supervisor (a stop that ran out of patience, Home
+        Assistant unloading the entry) must not abandon an open link on the proxy half way through.
+        Every await in it has its own deadline, so the shielded task always ends.
+        """
+        await asyncio.shield(self._teardown_now(client))
+
+    async def _teardown_now(self, client: BleakClient) -> None:
         if self._client is client:
             self._client = None
         if self._notifying:
@@ -855,7 +873,17 @@ class PawflyLink:
     async def _init_session(self, client: BleakClient) -> None:
         """subscribe -> verify key -> sync clock -> query status, all inside the GATT lock."""
         async with self._lock:
-            await self._bounded(client.start_notify(self._char, self._on_notify), GATT_OP_DEADLINE, "start_notify")
+            try:
+                await self._bounded(
+                    client.start_notify(self._char, self._on_notify, timeout=NOTIFY_BACKEND_TIMEOUT),
+                    GATT_OP_DEADLINE,
+                    "start_notify",
+                )
+            except Exception:
+                # Its own timeout, an error from the proxy or the outer guard: either way this route
+                # could not subscribe, so the next connect tries another one.
+                self._note_hung_step()
+                raise
             self._notifying = True
 
             try:
@@ -1063,7 +1091,7 @@ async def async_check_password(hass: HomeAssistant, address: str, password: str,
         if char is None:
             raise NotConnected("this is not a Pawfly light (characteristic ffe1 missing)")
         async with asyncio.timeout(GATT_OP_DEADLINE):
-            await client.start_notify(char, _notified)
+            await client.start_notify(char, _notified, timeout=NOTIFY_BACKEND_TIMEOUT)
             await client.write_gatt_char(char, key_frame, response=needs_write_response(char))
         try:
             async with asyncio.timeout(KEY_REPLY_TIMEOUT + 1):

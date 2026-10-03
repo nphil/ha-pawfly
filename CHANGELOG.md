@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.2.2 - 2026-10-02
+
+- A Bluetooth proxy that hangs while connecting or subscribing is now really left out of the next attempt
+  (when another proxy can reach the light). 0.2.1 only dropped the "preferred proxy" preference, so
+  Home Assistant's own proxy choice could still pick the same stuck proxy again.
+- A password the light refuses after setup has finished no longer ends in a misleading "light
+  unreachable" repair 15 minutes later. The light answered, so it is reachable: only the
+  re-authentication request is shown.
+- The Bluetooth subscribe step now asks the proxy for its own 4 s limit, so a stalled subscribe is
+  cleaned up by the proxy code instead of being cancelled half-way (which left a stray listener
+  behind on ESPHome proxies). The 10 s guard stays as a safety net.
+- Letting go of the light while the connection task is being cancelled can no longer be abandoned
+  half-way.
+
 ## 0.2.1 - 2026-10-02
 
 - Home Assistant now starts faster: this integration no longer holds up startup waiting for the
