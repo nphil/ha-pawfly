@@ -86,7 +86,7 @@ Presets (app-side curves, `Lamp4CTimer.Preset`; hh:mm R G B W): Japanese(0) 07:0
   `pawfly.change_password {new_password}` (updates entry data after success); `pawfly.release_link`.
 - Diagnostics download (redact password). Brand assets (8 PNGs), icons.json, strings/translations.
 - Tests: pure protocol golden tests (every encoder vs vendor-derived bytes, parser, DIY assembly), real-HA
-  harness via `pytest-homeassistant-custom-component` (reuse `/data/home/ha-iledclock/.venv-ha` — Python 3.14,
+  harness via `pytest-homeassistant-custom-component` (reuse `/data/home/PixelClock/ha-iledclock/.venv-ha` — Python 3.14,
   HA 2026.9.3) with a fake BLE client.
 
 ## Card contract (frontend)
