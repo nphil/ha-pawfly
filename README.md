@@ -103,6 +103,12 @@ light stop advertising. `pawfly.release_link` stays for handing the light to the
 scripts that still call it before a restart; it unloads the light cleanly, with a hard time limit,
 and reports honestly if that failed.
 
+If a proxy glitch leaves the light held by a "ghost link" (it stops advertising and cannot be
+reached), the integration notices after 3 minutes of silence and asks the proxy that last held the
+light to drop its connections one at a time until the light is heard again. That needs the proxy
+action `force_disconnect_handle` (see `ha/esphome/proxy-stock-config.yaml` in the HomeLabber repo);
+without it, nothing is sent and the light keeps retrying as before.
+
 ## Options
 
 **Settings -> Devices & services -> Pawfly -> Configure** (changing them reloads the entry):

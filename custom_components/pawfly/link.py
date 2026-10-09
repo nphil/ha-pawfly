@@ -28,6 +28,8 @@ Ownership and ordering (the house BLE rules, patterned on fluvalble's held link)
   actually waiting in a backoff; one raised during an attempt belongs to that attempt.
 * Two keys can be in play after ``async_change_password``: the new one is tried first (the
   light may already want it) and the previous one only if the light explicitly refuses it.
+* A light that stays silent after losing its link is freed from the proxy that last held it
+  (see ``GHOST_SILENCE``).
 """
 
 from __future__ import annotations
@@ -51,7 +53,7 @@ from bleak_retry_connector import establish_connection
 
 from homeassistant.components import bluetooth
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
-from homeassistant.util import dt as dt_util
+from homeassistant.util import dt as dt_util, slugify
 
 from . import protocol
 from .ble_affinity import make_affinity_client_class
@@ -105,6 +107,24 @@ ADVERT_KICK_MIN_GAP = 15.0
 DROP_WINDOW_SECONDS = 3600.0
 #: Consecutive unanswered status queries on a "ready" link before it is presumed wedged.
 STATUS_MISS_LIMIT = 3
+
+# --- silent ghost link -----------------------------------------------------------------
+#: A light that has not advertised for this long since its link ended is presumed held by a ghost:
+#: the proxy's host forgot the link but its radio kept it, so the light believes it is still
+#: connected and never advertises again. Seen live 2026-10-08 (22 h silent on the plant-room
+#: proxy, freed instantly by disconnecting connection 0). The light only talks when asked, so the
+#: house's orphan-frame detector never sees this ghost.
+GHOST_SILENCE = 180.0
+#: Pause between later tries while the light stays silent (it may simply be unpowered).
+GHOST_RETRY = (1800.0, 7200.0, 21600.0)
+#: Connection handles freed on that proxy, one at a time: its three slots plus the ghost.
+GHOST_HANDLES = (0, 1, 2, 3)
+#: How long to listen for the light after each handle, and to wait for the proxy to take the call.
+GHOST_LISTEN = 5.0
+GHOST_CALL_DEADLINE = 5.0
+#: The proxy action that sends an HCI Disconnect for one connection handle (house proxy firmware;
+#: a proxy without it is left alone).
+GHOST_ACTION = "force_disconnect_handle"
 
 # --- on-demand mode (keep_connected False) ---------------------------------------------
 #: Idle time after the last exchange before an on-demand link is released.
@@ -235,6 +255,7 @@ class PawflyLink:
         on_event: Callable[[LinkEvent], None],
         on_route: Callable[[str | None, str | None], None] | None = None,
         on_password: Callable[[str], None] | None = None,
+        last_holder: Callable[[], str | None] | None = None,
         clock: Callable[[], datetime] = dt_util.now,
         create_task: Callable[[Coroutine[Any, Any, None], str], asyncio.Task[None]] | None = None,
     ) -> None:
@@ -310,6 +331,15 @@ class PawflyLink:
         self.last_notification: str | None = None
         self.last_notification_at: datetime | None = None
         self._drops: deque[float] = deque()
+        # Silent-ghost watch: since when the light has had no link from us and been heard by nobody
+        # (None while a session is up or once it advertised), the proxy that last held it, when the
+        # next try is due, and how many tries this silence has had.
+        self._last_holder = last_holder or (lambda: None)
+        self._silent_since: float | None = time.monotonic()
+        self._next_ghost_try: float | None = None
+        self._ghost_tries = 0
+        self.ghost_frees = 0
+        self.last_ghost_try: str | None = None
 
     # ------------------------------------------------------------------ public state ---
 
@@ -378,6 +408,8 @@ class PawflyLink:
             "via_preferred_proxy": self.via_preferred_proxy,
             "last_notification": self.last_notification,
             "last_notification_at": _seconds_iso(self.last_notification_at),
+            "ghost_links_freed": self.ghost_frees,
+            "last_ghost_try": self.last_ghost_try,
         }
 
     # ------------------------------------------------------------------ lifecycle -----
@@ -701,6 +733,7 @@ class PawflyLink:
 
     async def _cycle(self) -> str:
         """One connect -> start-up -> hold -> teardown pass; returns why it ended."""
+        await self._free_silent_ghost()
         device = self._current_device()
         if device is None:
             raise LinkError("the light is not visible to any Bluetooth adapter or proxy")
@@ -724,6 +757,9 @@ class PawflyLink:
             self._set_ready(False)
             self._fail_waiters(NotConnected("the link went away"))
             await self._teardown(client)
+            if was_ready:
+                # From here the light should advertise again; if it does not, it is held elsewhere.
+                self._silent_since, self._next_ghost_try, self._ghost_tries = time.monotonic(), None, 0
         if was_ready and reason in ("dropped", "requested"):
             if reason == "requested" and self._drop_intentional:
                 self._emit(LinkEvent.RELINK)  # not a drop, but the entities have to follow the link down
@@ -740,6 +776,78 @@ class PawflyLink:
         if reason == "idle":
             self._emit(LinkEvent.IDLE)
         return reason
+
+    # ------------------------------------------------------------------ silent ghost ----
+
+    def _heard_since(self, moment: float) -> bool:
+        """Any scanner heard the light after ``moment`` (Home Assistant's monotonic clock)."""
+        info = bluetooth.async_last_service_info(self.hass, self.address, connectable=True)
+        return info is not None and info.time > moment
+
+    async def _free_silent_ghost(self) -> None:
+        """Free the light from a ghost link on the proxy that last held it, once it has gone silent.
+
+        Each connection handle on that proxy is disconnected in turn (HCI Disconnect, a clean
+        termination) until the light is heard again. A healthy link hit on the way drops and
+        reconnects in seconds; that is the price of not being able to tell handles apart.
+        """
+        if self._silent_since is None or self._latched or self._stopping:
+            return
+        if self._heard_since(self._silent_since):
+            self._silent_since = None
+            return
+        now = time.monotonic()
+        if self._next_ghost_try is None:
+            self._next_ghost_try = self._silent_since + GHOST_SILENCE
+        if now < self._next_ghost_try:
+            return
+        pause = GHOST_RETRY[min(self._ghost_tries, len(GHOST_RETRY) - 1)]
+        self._next_ghost_try = now + pause
+        self._ghost_tries += 1
+        holder = self._last_holder()
+        service = f"{slugify(holder)}_{GHOST_ACTION}" if holder else ""
+        if not service or not self.hass.services.has_service("esphome", service):
+            self.last_ghost_try = f"silent; {holder or 'no proxy known'} cannot free a link"
+            return
+        started = time.monotonic()
+        for handle in GHOST_HANDLES:
+            try:
+                async with asyncio.timeout(GHOST_CALL_DEADLINE):
+                    await self.hass.services.async_call("esphome", service, {"handle": handle}, blocking=True)
+            except Exception as err:  # noqa: BLE001 - a failed call must never stop the supervisor
+                self.last_ghost_try = f"{holder} refused connection {handle}: {err or type(err).__name__}"
+                _LOGGER.warning("%s: could not free connection %s on %s (%s)", self.name, handle, holder, err)
+                return
+            if await self._listen_for_light(started):
+                self.ghost_frees += 1
+                self._silent_since = None
+                self.last_ghost_try = f"freed connection {handle} on {holder}"
+                _LOGGER.info("%s: freed a ghost link on %s (connection %s); the light is back", self.name, holder, handle)
+                return
+            if self._stopping or self._latched:
+                return
+        self._next_ghost_try = time.monotonic() + pause  # the pause counts from the end of the pass
+        self.last_ghost_try = f"still silent after freeing connections on {holder}"
+        _LOGGER.warning(
+            "%s: still silent after freeing every connection on %s; it may be unpowered (next try in %.0f min)",
+            self.name,
+            holder,
+            pause / 60,
+        )
+
+    async def _listen_for_light(self, since: float) -> bool:
+        """Wait up to ``GHOST_LISTEN`` for the light to be heard; ends early on stop or latch."""
+        end = time.monotonic() + GHOST_LISTEN
+        while not (self._stopping or self._latched):
+            if self._heard_since(since):
+                return True
+            remaining = end - time.monotonic()
+            if remaining <= 0:
+                return False
+            self._wake.clear()
+            with contextlib.suppress(TimeoutError):
+                await asyncio.wait_for(self._wake.wait(), min(remaining, 0.5))
+        return False
 
     async def _hold_session(self) -> str:
         """Hold the ready link until it drops, is asked to drop, idles out, or stops."""

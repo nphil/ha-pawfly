@@ -371,6 +371,86 @@ async def test_a_command_while_down_cuts_the_backoff_short(config_entry, light, 
     assert light.connections == 2
 
 
+# -- silent ghost links -----------------------------------------------------------------------------------
+
+FREE_HANDLE = "plant_room_bluetooth_proxy_force_disconnect_handle"
+
+
+def proxy_frees(hass: HomeAssistant, on_free: Callable[[int], None] = lambda _handle: None) -> list[int]:
+    """Give the last holding proxy its ``force_disconnect_handle`` action; returns the handles it was asked to free."""
+    freed: list[int] = []
+
+    async def _free(call) -> None:
+        freed.append(call.data["handle"])
+        on_free(call.data["handle"])
+
+    hass.services.async_register("esphome", FREE_HANDLE, _free)
+    return freed
+
+
+async def test_a_light_silent_after_its_link_ends_is_freed_from_the_proxy_that_last_held_it(
+    hass, config_entry, light, caplog
+):
+    link = config_entry.runtime_data.link
+    assert config_entry.data[CONF_LAST_HOLDING_PROXY] == PROXY_ADAPTER
+
+    def _free(handle: int) -> None:
+        if handle == 2:  # the ghost was connection 2: the light advertises again
+            light.visible, light.connect_error = True, None
+
+    freed = proxy_frees(hass, _free)
+    # The proxy's radio still holds the light: it never advertises and nothing else can connect to it.
+    light.visible, light.connect_error = False, BleakError("held by a ghost link")
+    light.drop_link()
+
+    await wait_until(lambda: link.ready and link.ghost_frees == 1, message="the light freed and reconnected")
+    assert freed == [0, 1, 2]
+    assert link.snapshot()["last_ghost_try"] == f"freed connection 2 on {PROXY_ADAPTER}"
+    assert f"freed a ghost link on {PROXY_ADAPTER} (connection 2)" in caplog.text
+
+
+async def test_a_light_heard_after_its_link_ends_is_never_freed_even_while_it_cannot_connect(hass, config_entry, light):
+    link = config_entry.runtime_data.link
+    freed = proxy_frees(hass)
+    light.connect_error = BleakError("proxy busy")  # advertising, just not connectable right now
+    light.drop_link()
+
+    await asyncio.sleep(link_module.GHOST_SILENCE * 3)
+    assert link.failures >= 2
+    assert freed == []
+    assert link.snapshot()["last_ghost_try"] is None
+
+
+async def test_a_proxy_without_the_free_action_is_left_alone_and_the_link_keeps_trying(hass, config_entry, light):
+    link = config_entry.runtime_data.link
+    light.visible, light.connect_error = False, BleakError("held by a ghost link")
+    light.drop_link()
+
+    await wait_until(lambda: link.last_ghost_try is not None, message="the silence to be noticed")
+    assert link.last_ghost_try == f"silent; {PROXY_ADAPTER} cannot free a link"
+    light.visible, light.connect_error = True, None
+    await wait_until(lambda: link.ready, message="the reconnect once the light is heard")
+
+
+async def test_a_light_still_silent_after_every_connection_is_freed_waits_before_the_next_try(
+    hass, config_entry, light, caplog
+):
+    link = config_entry.runtime_data.link
+    freed = proxy_frees(hass)
+    light.visible, light.connect_error = False, BleakError("unpowered")
+    light.drop_link()
+
+    await wait_until(
+        lambda: (link.last_ghost_try or "").startswith("still silent"), message="one full pass to end"
+    )
+    assert freed == list(link_module.GHOST_HANDLES)
+    assert "it may be unpowered" in caplog.text
+    await asyncio.sleep(link_module.GHOST_RETRY[0] / 4)
+    assert len(freed) == len(link_module.GHOST_HANDLES), "tried again before the retry pause ended"
+    await wait_until(lambda: len(freed) == 2 * len(link_module.GHOST_HANDLES), message="the second pass")
+    assert link.ghost_frees == 0
+
+
 # -- dead links -------------------------------------------------------------------------------------------
 
 

@@ -124,6 +124,7 @@ class PawflyCoordinator(DataUpdateCoordinator[protocol.Status | None]):
             on_event=self._on_link_event,
             on_route=self._on_route,
             on_password=self._store_password,
+            last_holder=lambda: entry.data.get(CONF_LAST_HOLDING_PROXY) or None,
             create_task=lambda coro, name: entry.async_create_background_task(hass, coro, name),
         )
         self._status_debouncer: Debouncer[None] = Debouncer(

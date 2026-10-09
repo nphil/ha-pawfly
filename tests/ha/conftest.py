@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+import time
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import patch
 
@@ -69,6 +71,9 @@ def _fast_timing(monkeypatch: pytest.MonkeyPatch) -> None:
         "ON_DEMAND_REQUEST_WINDOW": 1.5,
         "RELINK_TIMEOUT": 3.0,
         "STOP_GRACE": 2.0,
+        "GHOST_SILENCE": 0.2,
+        "GHOST_LISTEN": 0.2,
+        "GHOST_RETRY": (0.6,),
     }.items():
         monkeypatch.setattr(link_module, name, value)
     monkeypatch.setattr(coordinator_module, "STATUS_DEBOUNCE", 0.01)
@@ -93,6 +98,12 @@ def _fake_bluetooth(light: FakePawflyLight):
             await asyncio.sleep(light.connect_delay)
         return light.new_client(disconnected_callback)
 
+    def _last_service_info(hass: Any, address: str, connectable: bool = True) -> Any:
+        # A light advertises whenever it is in range and nobody holds its one connection.
+        if address.upper() != light.address.upper() or not light.visible or light.connected:
+            return None
+        return SimpleNamespace(time=time.monotonic())
+
     def _register_callback(hass: Any, callback: Any, matcher: Any, mode: Any) -> Callable[[], None]:
         entry = (callback, dict(matcher))
         light.advert_callbacks.append(entry)
@@ -105,6 +116,7 @@ def _fake_bluetooth(light: FakePawflyLight):
             side_effect=_device_from_address,
         ),
         patch("custom_components.pawfly.link.bluetooth.async_register_callback", side_effect=_register_callback),
+        patch("custom_components.pawfly.link.bluetooth.async_last_service_info", side_effect=_last_service_info),
     ):
         yield
 
