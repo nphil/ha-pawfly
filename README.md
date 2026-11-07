@@ -147,7 +147,8 @@ integration only has to give it everything without extra websocket commands:
 ## Development
 
 ```bash
-python -m pytest tests -q          # protocol tests + real-Home-Assistant tests with a fake light
+pip install "pytest-homeassistant[bluetooth]"   # the test harness, versioned like Home Assistant
+python -m pytest -q                # protocol tests + real-Home-Assistant tests with a fake light
 python tools/render_brand.py       # re-render custom_components/pawfly/brand/*.png
 ```
 

@@ -165,10 +165,9 @@ def _entry_for_device(hass: HomeAssistant, device_id: str) -> ConfigEntry:
             translation_key="device_not_found",
             translation_placeholders={"device_id": device_id},
         )
-    for entry_id in device.config_entries:
-        entry = hass.config_entries.async_get_entry(entry_id)
-        if entry is not None and entry.domain == DOMAIN:
-            return entry
+    entry = hass.config_entries.async_get_entry(device.config_entry_id)
+    if entry is not None and entry.domain == DOMAIN:
+        return entry
     raise ServiceValidationError(
         translation_domain=DOMAIN,
         translation_key="not_a_pawfly_device",

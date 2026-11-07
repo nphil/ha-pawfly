@@ -12,7 +12,7 @@ import pytest
 from homeassistant.const import CONF_PASSWORD
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.translation import async_get_translations
-from pytest_homeassistant_custom_component.components.diagnostics import get_diagnostics_for_config_entry
+from pytest_homeassistant.components.diagnostics import get_diagnostics_for_config_entry
 
 from custom_components.pawfly.const import DOMAIN
 

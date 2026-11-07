@@ -86,8 +86,9 @@ Presets (app-side curves, `Lamp4CTimer.Preset`; hh:mm R G B W): Japanese(0) 07:0
   `pawfly.change_password {new_password}` (updates entry data after success); `pawfly.release_link`.
 - Diagnostics download (redact password). Brand assets (8 PNGs), icons.json, strings/translations.
 - Tests: pure protocol golden tests (every encoder vs vendor-derived bytes, parser, DIY assembly), real-HA
-  harness via `pytest-homeassistant-custom-component` (reuse `/data/home/PixelClock/ha-iledclock/.venv-ha` — Python 3.14,
-  HA 2026.9.3) with a fake BLE client.
+  harness via `pytest-homeassistant[bluetooth]` (the package core ships since 2026.11, versioned like Home Assistant;
+  it replaces the discontinued `pytest-homeassistant-custom-component`) with a fake BLE client. CI
+  (`.github/workflows/ha-compat.yml`) runs the suite against Home Assistant stable and beta weekly.
 
 ## Card contract (frontend)
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.1 - 2026-11-07
+
+- Ready for Home Assistant 2026.11. The services (`pawfly.release_link` and the others that take a
+  device) found the light's config entry through a device-registry field that Home Assistant is
+  retiring (`config_entries`); they now use `config_entry_id`, which works on 2026.10 and 2026.11.
+- The test suite moved to the test package Home Assistant itself now ships (`pytest-homeassistant`),
+  and a weekly GitHub check runs it against Home Assistant's stable and beta releases, so a breaking
+  release shows up here before it reaches the house.
+- The integration is listed under the Lighting category.
+
 ## 0.3.0 - 2026-10-09
 
 - The light now frees itself from a "ghost link". If a Bluetooth proxy glitches, its radio can keep

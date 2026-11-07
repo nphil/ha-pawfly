@@ -17,7 +17,7 @@ import pytest
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import CONF_ADDRESS, CONF_PASSWORD
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant.common import MockConfigEntry
 
 from custom_components.pawfly import coordinator as coordinator_module
 from custom_components.pawfly import link as link_module
@@ -27,11 +27,6 @@ from .fake_light import DEFAULT_KEY, FakePawflyLight
 
 ENTRY_TITLE = "Plant Room Aquarium Accent Light"
 BASE = "plant_room_aquarium_accent_light"
-
-
-@pytest.fixture(autouse=True)
-def _auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
-    """Load this repo's ``custom_components/pawfly`` as a real, installed integration."""
 
 
 @pytest.fixture(autouse=True)
